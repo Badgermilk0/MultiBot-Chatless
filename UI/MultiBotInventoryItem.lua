@@ -70,6 +70,32 @@ local function getInventoryItemPosition(frame)
     return (index % itemsPerRow) * spacingX, math.floor(index / itemsPerRow) * -spacingY
 end
 
+local INVENTORY_QUALITY_BY_COLOR = {
+    ["9d9d9d"] = 0, -- poor / grey
+    ["ffffff"] = 1, -- common / white
+    ["1eff00"] = 2, -- uncommon / green
+    ["0070dd"] = 3, -- rare / blue
+    ["a335ee"] = 4, -- epic / purple
+    ["ff8000"] = 5, -- legendary / orange
+    ["e6cc80"] = 6, -- artifact / heirloom
+}
+
+-- Derive item quality from the |cAARRGGBB colour the bridge sends in the item link, so we never
+-- need GetItemInfo (see buildInventoryItemRecord). Returns 0-6, or nil if the colour is unknown.
+local function deriveInventoryItemRarity(parts)
+    local color = parts and parts[2]
+    if type(color) ~= "string" then
+        return nil
+    end
+
+    local rgb = color:match("^c%x%x(%x%x%x%x%x%x)")
+    if not rgb then
+        return nil
+    end
+
+    return INVENTORY_QUALITY_BY_COLOR[string.lower(rgb)]
+end
+
 local function buildInventoryItemRecord(itemInfo)
     local parts, itemData = splitInventoryItemPayload(itemInfo)
     local itemId = itemData[2]
@@ -77,21 +103,21 @@ local function buildInventoryItemRecord(itemInfo)
         return nil
     end
 
-    local itemIcon = GetItemIcon(itemId)
-    local itemName, itemLink, itemRare, _, _, itemType, _, _, _, _, _, itemClassID = GetItemInfo(itemId)
-    if (itemClassID == nil) and GetItemInfoInstant then
-        local _, _, _, _, _, instantClassID = GetItemInfoInstant(tonumber(itemId) or itemId)
-        itemClassID = instantClassID
-    end
+    -- IMPORTANT: do NOT call GetItemInfo() here. On some modded 3.3.5a clients it hard-crashes
+    -- the game (no Lua error) while resolving a bot's bag items as they render. The inventory is
+    -- bridge-driven, so resolve name/link from the payload, rarity from the link colour, and the
+    -- icon from the crash-safe GetItemIcon (passed a numeric id). classID/type are left nil
+    -- (quest-item sell protection then relies on the server/bot, plus the key/hearthstone guards).
+    local itemIcon = GetItemIcon(tonumber(itemId) or itemId)
 
     return {
         id = itemId,
         icon = itemIcon,
-        name = resolveInventoryItemName(parts, itemName),
-        link = resolveInventoryItemLink(parts, itemLink),
-        rare = resolveInventoryItemRarity(itemRare),
-        classID = itemClassID,
-        type = itemType,
+        name = resolveInventoryItemName(parts, nil),
+        link = resolveInventoryItemLink(parts, nil),
+        rare = resolveInventoryItemRarity(deriveInventoryItemRarity(parts)),
+        classID = nil,
+        type = nil,
         count = extractInventoryItemCount(parts),
         _serverCount = extractInventoryItemCount(parts) or 1,
         info = itemInfo,

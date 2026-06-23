@@ -522,7 +522,7 @@ function HunterQuick:CollectHunterBots()
             local unit = "raid" .. index
             local name = UnitName(unit)
             local _, classToken = UnitClass(unit)
-            if name and classToken == "HUNTER" and (not MultiBot.IsBot or MultiBot.IsBot(name)) then
+            if name and classToken == "HUNTER" and MultiBot.IsBot and MultiBot.IsBot(name) then
                 table.insert(names, name)
             end
         end
@@ -532,7 +532,7 @@ function HunterQuick:CollectHunterBots()
             local unit = "party" .. index
             local name = UnitName(unit)
             local _, classToken = UnitClass(unit)
-            if name and classToken == "HUNTER" and (not MultiBot.IsBot or MultiBot.IsBot(name)) then
+            if name and classToken == "HUNTER" and MultiBot.IsBot and MultiBot.IsBot(name) then
                 table.insert(names, name)
             end
         end
@@ -574,7 +574,7 @@ function HunterQuick:SetManualVisibility(visible)
     end
 end
 
-function HunterQuick:ApplyCollapsedState()
+function HunterQuick:ApplyCollapsedState(count)
     if not self.window or not self.window.frame then
         return
     end
@@ -587,9 +587,11 @@ function HunterQuick:ApplyCollapsedState()
         row:Hide()
     end
 
-    self.window:SetWidth(HANDLE_WIDTH)
-    self.window:SetHeight(HANDLE_HEIGHT)
-    self:UpdateToggleHandleLayout(true)
+    -- Keep the same window geometry as the expanded state so the toggle handle (the "×")
+    -- keeps a fixed screen position when collapsing/expanding. The window frame is invisible
+    -- and mouse-disabled (see stripWindowChrome), so the now-empty area is fully click-through.
+    self:UpdateWindowGeometry(count or #self:CollectHunterBots())
+    self:UpdateToggleHandleLayout(false)
 
     self.window:Show()
     self:RestorePosition()
@@ -1339,7 +1341,7 @@ function HunterQuick:Rebuild()
         if manuallyVisible then
             self:ApplyExpandedState(#desiredNames)
         else
-            self:ApplyCollapsedState()
+            self:ApplyCollapsedState(#desiredNames)
         end
     elseif self.window then
         updateWindowTitle(self, 0)

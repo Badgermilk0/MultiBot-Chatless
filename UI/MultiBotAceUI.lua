@@ -24,10 +24,19 @@ end
 function AceUI.GetLocalizedQuestName(questID)
     local tooltip = ensureHiddenTooltip(questTooltipName, UIParent)
     tooltip:ClearLines()
-    tooltip:SetHyperlink("quest:" .. questID)
+    tooltip:SetHyperlink("quest:" .. tostring(questID))
 
     local textObject = _G[questTooltipName .. "TextLeft1"]
-    return (textObject and textObject:GetText()) or tostring(questID)
+    local text = textObject and textObject:GetText()
+
+    -- On a tooltip cache miss the client returns nothing (or the raw id). Return nil so
+    -- callers fall back to the server-provided quest name instead of showing the numeric
+    -- id; the title resolves once the client has cached the quest.
+    if type(text) ~= "string" or text == "" or text == tostring(questID) then
+        return nil
+    end
+
+    return text
 end
 
 function AceUI.GetAceGUI()

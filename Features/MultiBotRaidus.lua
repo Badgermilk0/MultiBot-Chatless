@@ -140,6 +140,11 @@ end
 
 MultiBot.raidus:HookScript("OnShow", function()
     syncRaidusMainButtonState(true)
+    -- Rebuild the pool every time the frame becomes visible so it reflects the current
+    -- bots regardless of which path opened it, and so layout is computed while shown.
+    if MultiBot.raidus.setRaidus then
+        MultiBot.raidus.setRaidus()
+    end
 end)
 
 MultiBot.raidus:HookScript("OnHide", function()
@@ -179,7 +184,10 @@ local function initRaidusAceWindow()
     window:SetHeight(630)
     window:EnableResize(false)
     window:SetLayout("Fill")
-    window.frame:SetFrameStrata("DIALOG")
+    local strataLevel = MultiBot.GetGlobalStrataLevel and MultiBot.GetGlobalStrataLevel()
+    if strataLevel then
+        window.frame:SetFrameStrata(strataLevel)
+    end
 
     MultiBot.raidus:SetParent(window.content)
     MultiBot.raidus:ClearAllPoints()

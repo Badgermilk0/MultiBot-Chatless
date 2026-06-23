@@ -120,7 +120,8 @@ function MultiBot.BuildBotAllList(botName)
     local quests = (questsStore and questsStore[botName]) or EMPTY_TABLE
     for _, link in ipairs(quests) do
         local questID = tonumber(link:match("|Hquest:(%d+):"))
-        local localizedName = questID and Shared.GetLocalizedQuestName(questID, link) or link
+        local fallbackName = link:match("%[(.-)%]") or link
+        local localizedName = (questID and Shared.GetLocalizedQuestName(questID, fallbackName)) or fallbackName
         local displayLink = link:gsub("%[[^%]]+%]", "|cff00ff00[" .. localizedName .. "]|r")
 
         createQuestRow(frame, questID, displayLink)

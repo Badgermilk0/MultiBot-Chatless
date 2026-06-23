@@ -312,6 +312,41 @@ function MultiBot.ClearGlobalBotStore()
   end
 end
 
+-- Returns true only when `name` is a known playerbot (never the controlling player).
+-- Used by UI that must list bots but exclude human players (e.g. the Quick bars).
+-- Positive signals are bot-specific: the active roster, the bridge-synced players
+-- roster, and the persistent global bot store. Group/friends rosters are skipped on
+-- purpose because they can legitimately contain human characters.
+function MultiBot.IsBot(name)
+  if type(name) ~= "string" or name == "" then
+    return false
+  end
+
+  if name == UnitName("player") then
+    return false
+  end
+
+  if MultiBot.isActive and MultiBot.isActive(name) then
+    return true
+  end
+
+  local players = MultiBot.index and MultiBot.index.players
+  if type(players) == "table" then
+    for _, value in pairs(players) do
+      if value == name then
+        return true
+      end
+    end
+  end
+
+  local store = MultiBot.GetGlobalBotStore and MultiBot.GetGlobalBotStore()
+  if type(store) == "table" and store[name] ~= nil then
+    return true
+  end
+
+  return false
+end
+
 local MINIMAP_CONFIG_DEFAULTS = {
   hide = false,
   angle = 220,
@@ -1309,7 +1344,10 @@ local function IsBridgeRosterBotActive(botName)
     end
 
     for index = 1, raidCount do
-      if UnitName("raid" .. index) == botName then
+      -- A raid slot keeps the bot's name even after it disconnects, so match on the
+      -- NAME *and* the live connection: otherwise an offline-but-still-grouped bot reads
+      -- as "active" and shows online (bright + EveryBar). Mirrors MultiBotRaidus.
+      if UnitName("raid" .. index) == botName and UnitIsConnected("raid" .. index) then
         return true
       end
     end
@@ -1323,7 +1361,9 @@ local function IsBridgeRosterBotActive(botName)
   end
 
   for index = 1, partyCount do
-    if UnitName("party" .. index) == botName then
+    -- Same as the raid branch: an offline party member still returns its name, so require
+    -- UnitIsConnected or disconnected bots linger as "online".
+    if UnitName("party" .. index) == botName and UnitIsConnected("party" .. index) then
       return true
     end
   end
@@ -1483,6 +1523,16 @@ function MultiBot.SyncBridgeRosterToPlayers(roster)
    if MultiBot.RelayoutUnitsDisplay then
      MultiBot.RelayoutUnitsDisplay()
    end
+
+  -- Refresh the class Quick bars too: they only list confirmed bots (MultiBot.IsBot), so a
+  -- freshly synced roster needs to repopulate them or a newly added shaman/hunter bot would
+  -- linger out of its quick bar until the next group event.
+  if MultiBot.ShamanQuick and MultiBot.ShamanQuick.RefreshFromGroup then
+    MultiBot.ShamanQuick:RefreshFromGroup()
+  end
+  if MultiBot.HunterQuick and MultiBot.HunterQuick.Rebuild then
+    MultiBot.HunterQuick:Rebuild()
+  end
 
   return true
 end
@@ -1789,28 +1839,37 @@ function MultiBot.ApplyBridgeBotState(name, combat, normal)
   button.normal = normal or ""
   button.waitFor = ""
 
-  if not button.class or button.class == "" then
-    if button.setEnable then
-      button.setEnable()
+  -- Online/offline (enabled vs greyed) is decided by group membership AND live connection,
+  -- NOT by the mere presence of a bridge state: the bridge also reports states for pool bots
+  -- that are not in the group, so blindly enabling here lit up every bot as "online" after a
+  -- states refresh. IsBridgeRosterBotActive also rejects disconnected group members (a raid/
+  -- party slot keeps the name after the bot logs out). Mirror SyncBridgeRosterToPlayers.
+  local active = IsBridgeRosterBotActive(name)
+  local function applyActiveVisual()
+    if active then
+      if button.setEnable then button.setEnable() end
+    else
+      if button.setDisable then button.setDisable() end
     end
+  end
+
+  if not button.class or button.class == "" then
+    applyActiveVisual()
     return true
   end
 
-  if not shouldRebuildFrame then
+  -- Only grouped bots belong in the actives index.
+  if active then
     EnsureBridgeActiveIndex(button, name)
-    if button.setEnable then
-      button.setEnable()
-    end
+  end
 
+  if not shouldRebuildFrame then
+    applyActiveVisual()
     RequestBridgeUnitsRelayout()
     return true
   end
 
-  EnsureBridgeActiveIndex(button, name)
-
-  if button.setEnable then
-    button.setEnable()
-  end
+  applyActiveVisual()
 
   if existingFrame or IsBridgeUnitDisplayedNow(name) then
     BuildBridgeUnitFrame(units, button, name, button.combat, button.normal, true)
@@ -2187,7 +2246,6 @@ MultiBot.AddClassToTarget = function(classCmd, gender)
   local msg = ".playerbot bot addclass " .. classCmd
   if gender then                                 -- male / female / 0 / 1
 	msg = msg .. " " .. gender
-	print("[DBG] Message de sortie :" ,msg)
   end
   SendChatMessage(msg, "SAY")
 

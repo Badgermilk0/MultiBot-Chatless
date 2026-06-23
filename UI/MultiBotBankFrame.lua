@@ -66,7 +66,10 @@ local function createWindow(name, title, width, height, pointX)
         widget:SetWidth(width)
         widget:SetHeight(height)
         widget.frame:SetPoint("CENTER", UIParent, "CENTER", pointX or 0, 0)
-        widget.frame:SetFrameStrata("DIALOG")
+        local strataLevel = MultiBot.GetGlobalStrataLevel and MultiBot.GetGlobalStrataLevel()
+        if strataLevel then
+            widget.frame:SetFrameStrata(strataLevel)
+        end
         widget:EnableResize(false)
 
         if widget.content then
@@ -79,7 +82,10 @@ local function createWindow(name, title, width, height, pointX)
     local frame = CreateFrame("Frame", name, UIParent, "BasicFrameTemplateWithInset")
     frame:SetSize(width, height)
     frame:SetPoint("CENTER", UIParent, "CENTER", pointX or 0, 0)
-    frame:SetFrameStrata("DIALOG")
+    local strataLevel = MultiBot.GetGlobalStrataLevel and MultiBot.GetGlobalStrataLevel()
+    if strataLevel then
+        frame:SetFrameStrata(strataLevel)
+    end
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.title:SetPoint("TOP", 0, -7)
     frame.title:SetText(title)

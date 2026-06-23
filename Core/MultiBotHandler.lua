@@ -37,31 +37,62 @@ local function BridgeBootOwnsState()
 	return false
 end
 
-local function RequestBridgeSnapshotAfterGroupReconnect()
-	if not (MultiBot and MultiBot.Comm and MultiBot.bridge and MultiBot.bridge.connected) then
+-- Request a fresh roster/states/details snapshot from the bridge. The handshake can
+-- complete a short while after login/reload, so retry until the bridge reports connected
+-- instead of giving up after a single attempt (which left the Units bar showing bots as
+-- "unknown" until a manual /reload). Applying the roster snapshot rebuilds the Units
+-- buttons through MultiBot.SyncBridgeRosterToPlayers.
+local function RequestBridgeSnapshot(reason, attemptsLeft)
+	if not (MultiBot and MultiBot.Comm) then
 		return
 	end
 
-	local function refresh()
-		if not (MultiBot and MultiBot.Comm and MultiBot.bridge and MultiBot.bridge.connected) then
-			return
-		end
+	attemptsLeft = tonumber(attemptsLeft) or 8
 
-		if MultiBot.Comm.RequestRoster then
-			MultiBot.Comm.RequestRoster()
+	if not (MultiBot.bridge and MultiBot.bridge.connected) then
+		if attemptsLeft > 0 and MultiBot.TimerAfter then
+			MultiBot.TimerAfter(0.5, function()
+				RequestBridgeSnapshot(reason, attemptsLeft - 1)
+			end)
 		end
-		if MultiBot.Comm.RequestStates then
-			MultiBot.Comm.RequestStates()
-		end
-		if MultiBot.Comm.RequestBotDetails then
-			MultiBot.Comm.RequestBotDetails()
-		end
+		return
 	end
 
+	if MultiBot.Comm.RequestRoster then
+		MultiBot.Comm.RequestRoster()
+	end
+	if MultiBot.Comm.RequestStates then
+		MultiBot.Comm.RequestStates()
+	end
+	if MultiBot.Comm.RequestBotDetails then
+		MultiBot.Comm.RequestBotDetails()
+	end
+end
+
+-- Throttled wrapper for high-frequency callers (group/raid roster updates).
+local function RequestBridgeSnapshotThrottled(reason, minInterval)
+	local now = (type(GetTime) == "function") and GetTime() or 0
+	minInterval = tonumber(minInterval) or 1.5
+	if MultiBot._lastUnitsSnapshotAt and (now - MultiBot._lastUnitsSnapshotAt) < minInterval then
+		return
+	end
+	MultiBot._lastUnitsSnapshotAt = now
+	RequestBridgeSnapshot(reason)
+end
+
+local function RequestBridgeSnapshotAfterGroupReconnect()
+	if not (MultiBot and MultiBot.Comm) then
+		return
+	end
+
+	-- Give the `.playerbot bot add` reconnects a moment to settle, then pull a snapshot
+	-- (retrying until the bridge is connected).
 	if MultiBot.TimerAfter then
-		MultiBot.TimerAfter(2.0, refresh)
+		MultiBot.TimerAfter(2.0, function()
+			RequestBridgeSnapshot("group-reconnect")
+		end)
 	else
-		refresh()
+		RequestBridgeSnapshot("group-reconnect")
 	end
 end
 
@@ -77,17 +108,19 @@ local function ReconnectExistingGroupBots(reason)
 
 	local playerName = UnitName("player")
 	local sent = 0
+	local raidCount = GetNumRaidMembers()
+	local partyCount = GetNumPartyMembers()
 
-	if GetNumRaidMembers() > 0 then
-		for i = 1, GetNumRaidMembers() do
+	if raidCount > 0 then
+		for i = 1, raidCount do
 			local raidName = UnitName("raid" .. i)
 			if raidName and raidName ~= "" and raidName ~= playerName then
 				SendChatMessage(".playerbot bot add " .. raidName, "SAY")
 				sent = sent + 1
 			end
 		end
-	elseif GetNumPartyMembers() > 0 then
-		for i = 1, GetNumPartyMembers() do
+	elseif partyCount > 0 then
+		for i = 1, partyCount do
 			local partyName = UnitName("party" .. i)
 			if partyName and partyName ~= "" and partyName ~= playerName then
 				SendChatMessage(".playerbot bot add " .. partyName, "SAY")
@@ -109,6 +142,71 @@ end
 
 local function LegacyChatFallbackEnabled()
 	return MultiBot and MultiBot.allowLegacyChatFallback == true
+end
+
+-- Auto-invite robustness: a `.playerbot bot add` can silently fail server-side (e.g. the bot
+-- is far away / in another zone, like the one Redridge bot among Blackrock bots). The invite
+-- queue used to decrement its budget the instant it *sent* the add, so a single failed add
+-- burned a raid slot with no retry. Instead we now measure progress by how many roster bots
+-- are actually grouped and re-walk the roster for a few rounds until the target is met.
+local MAX_INVITE_ROUNDS = 3
+
+-- How many of the roster's bots are currently in our group/raid.
+local function countRosterMembers(tTable)
+	if type(tTable) ~= "table" then return 0 end
+	local count = 0
+	for i = 1, #tTable do
+		if MultiBot.isMember(tTable[i]) then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+local function finishInvite()
+	local invite = MultiBot.timer.invite
+
+	-- Mass invite must ONLY fill the raid. `.playerbot bot add` logs a bot in even when it
+	-- can't be grouped (e.g. the raid is already full, or the add half-failed server-side), so
+	-- it can leave a bot online-but-ungrouped. Log out any bot this invite brought online that
+	-- never made it into the group, so the net effect is exactly a filled raid with no orphans.
+	-- Stagger the removes (not one burst) to stay under the client chat throttle, and re-check
+	-- membership at fire time in case the bot finally grouped.
+	if type(invite.attempted) == "table" then
+		local slot = 0
+		for name in pairs(invite.attempted) do
+			if MultiBot.isMember(name) == false then
+				local botName = name
+				if MultiBot.TimerAfter then
+					slot = slot + 1
+					MultiBot.TimerAfter(slot * 0.6, function()
+						if MultiBot.isMember(botName) == false then
+							SendChatMessage(".playerbot bot remove " .. botName, "SAY")
+						end
+					end)
+				else
+					SendChatMessage(".playerbot bot remove " .. botName, "SAY")
+				end
+			end
+		end
+	end
+
+	if invite.roster == "raidus" then
+		MultiBot.timer.sort.elapsed = 0
+		MultiBot.timer.sort.index = 1
+		MultiBot.timer.sort.needs = 0
+		MultiBot.auto.sort = true
+	end
+
+	invite.elapsed = 0
+	invite.roster = ""
+	invite.index = 1
+	invite.needs = 0
+	invite.target = nil
+	invite.round = nil
+	invite.base = nil
+	invite.attempted = nil
+	MultiBot.auto.invite = false
 end
 
 function MultiBot.HandleOnUpdate(pElapsed)
@@ -136,32 +234,64 @@ function MultiBot.HandleOnUpdate(pElapsed)
 	end
 
 	if(MultiBot.auto.invite and MultiBot.timer.invite.elapsed >= MultiBot.timer.invite.interval) then
-		local tTable = MultiBot.index[MultiBot.timer.invite.roster]
+		local invite = MultiBot.timer.invite
+		local tTable = MultiBot.index[invite.roster]
 
-		if(MultiBot.timer.invite.needs == 0 or MultiBot.timer.invite.index > #tTable) then
-			if(MultiBot.timer.invite.roster == "raidus") then
-				MultiBot.timer.sort.elapsed = 0
-				MultiBot.timer.sort.index = 1
-				MultiBot.timer.sort.needs = 0
-				MultiBot.auto.sort = true
+		-- Capture the retry baseline on the first tick of a fresh invite: `target` is how many
+		-- bots we want to add, `base` is how many roster bots were already grouped at the start,
+		-- so actual progress = current roster members - base (counts real joins, not sends).
+		if invite.target == nil then
+			invite.target = invite.needs
+			invite.round = 1
+			invite.base = countRosterMembers(tTable)
+			invite.attempted = {}
+		end
+
+		local addedSoFar = countRosterMembers(tTable) - (invite.base or 0)
+		if addedSoFar < 0 then addedSoFar = 0 end
+		local remaining = (invite.target or 0) - addedSoFar
+
+		if (not tTable) or #tTable == 0 or remaining <= 0 then
+			-- Target met (raid filled / asked-for count joined) or nothing to invite.
+			finishInvite()
+			return
+		elseif invite.index > #tTable then
+			-- End of a pass with slots still open: re-walk the roster (capped) so a bot whose
+			-- add silently failed gets another attempt instead of leaving a permanent gap.
+			if (invite.round or 1) >= MAX_INVITE_ROUNDS then
+				finishInvite()
+				return
 			end
-
-			MultiBot.timer.invite.elapsed = 0
-			MultiBot.timer.invite.roster = ""
-			MultiBot.timer.invite.index = 1
-			MultiBot.timer.invite.needs = 0
-			MultiBot.auto.invite = false
+			invite.round = (invite.round or 1) + 1
+			invite.index = 1
+			invite.elapsed = 0
 			return
 		end
 
-		if(MultiBot.isMember(tTable[MultiBot.timer.invite.index]) == false) then
-			SendChatMessage(MultiBot.doReplace(MultiBot.L("info.inviting"), "NAME", tTable[MultiBot.timer.invite.index]), "SAY")
-			SendChatMessage(".playerbot bot add " .. tTable[MultiBot.timer.invite.index], "SAY")
-			MultiBot.timer.invite.needs = MultiBot.timer.invite.needs - 1
+		-- Skip bots already grouped without burning a throttled tick each; only the actual
+		-- add command is rate-limited. This keeps retry rounds fast when most bots are in.
+		while invite.index <= #tTable and MultiBot.isMember(tTable[invite.index]) do
+			invite.index = invite.index + 1
 		end
 
-		MultiBot.timer.invite.index = MultiBot.timer.invite.index + 1
-		MultiBot.timer.invite.elapsed = 0
+		if invite.index <= #tTable then
+			local name = tTable[invite.index]
+			-- A party holds 5 (you + 4); the 6th member needs a raid first or the invite
+			-- silently fails ("party is full") and the bot logs in ungrouped — the boundary
+			-- bot was the consistent orphan. Convert before the add (mirrors the chat-add
+			-- guard); the server processes the conversion before the subsequent add.
+			if GetNumRaidMembers() == 0 and GetNumPartyMembers() >= 4 then
+				ConvertToRaid()
+			end
+			if type(invite.attempted) == "table" then
+				invite.attempted[name] = true
+			end
+			SendChatMessage(MultiBot.doReplace(MultiBot.L("info.inviting"), "NAME", name), "SAY")
+			SendChatMessage(".playerbot bot add " .. name, "SAY")
+			invite.index = invite.index + 1
+		end
+
+		invite.elapsed = 0
 	end
 
 	if(MultiBot.auto.sort and MultiBot.timer.sort.elapsed >= MultiBot.timer.sort.interval) then
@@ -1448,6 +1578,10 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 				else
 					ReconnectExistingGroupBots(event)
 				end
+
+				-- Group composition changed: refresh the Units bar from a fresh bridge
+				-- snapshot so reconnected/added/removed bots no longer linger as "unknown".
+				RequestBridgeSnapshotThrottled(event)
 			end
 
 			return
@@ -1470,6 +1604,10 @@ function MultiBot.HandleMultiBotEvent(event, ...)
         else
             ReconnectExistingGroupBots("entering-world")
         end
+
+        -- Pull a roster/states snapshot once the bridge handshake completes so the Units
+        -- bar repopulates after login/reload without needing a manual /reload.
+        RequestBridgeSnapshot("entering-world")
 
         SendChatMessage(".account", "SAY")
 
@@ -1715,8 +1853,9 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 			-- REFRESH:RAID --
 
-			if(GetNumRaidMembers() > 4) then
-				for i = 1, GetNumRaidMembers() do
+			local raidCount = GetNumRaidMembers()
+			if(raidCount > 4) then
+				for i = 1, raidCount do
 					local raidName = UnitName("raid" .. i)
 					SendChatMessage(".playerbot bot add " .. raidName, "SAY")
 				end
@@ -1726,8 +1865,9 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 			-- REFRESH:GROUP --
 
-			if(GetNumPartyMembers() > 0) then
-				for i = 1, GetNumPartyMembers() do
+			local partyCount = GetNumPartyMembers()
+			if(partyCount > 0) then
+				for i = 1, partyCount do
 					local partyName = UnitName("party" .. i)
 					SendChatMessage(".playerbot bot add " .. partyName, "SAY")
 				end

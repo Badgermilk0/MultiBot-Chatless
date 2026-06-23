@@ -121,6 +121,21 @@ local function getDisplayableUnits(unitsFrame, sourceTable)
         end
     end
 
+    -- Deterministic order so pagination stays consistent. The source indices
+    -- (index.players / index.actives) are rebuilt from bridge snapshots in a non-stable
+    -- order, so without an explicit sort the page window (from/to) can land on different
+    -- bots between scrolls — making offline bots appear "online" again and scrambling the
+    -- order. Sort online (active) bots first, then offline, each group alphabetical so the
+    -- greyed/offline bots stay grouped and the order never shifts on its own.
+    table.sort(display, function(a, b)
+        local aOnline = unitsFrame.buttons[a] and unitsFrame.buttons[a].state and true or false
+        local bOnline = unitsFrame.buttons[b] and unitsFrame.buttons[b].state and true or false
+        if aOnline ~= bOnline then
+            return aOnline
+        end
+        return tostring(a) < tostring(b)
+    end)
+
     return display
 end
 
@@ -458,10 +473,14 @@ local function rebuildGuildAndFriendIndexes(button)
 
     local guildCount = 0
     for index = 1, maxMembers do
-        local name, _, _, level, className = GetGuildRosterInfo(index)
+        local name, _, _, level, className, _, _, _, online = GetGuildRosterInfo(index)
         if name ~= nil and level ~= nil and className ~= nil and name ~= UnitName("player") then
             guildCount = guildCount + 1
-            addRosterMemberButton(MultiBot.addMember(className, level, name))
+            local memberButton = MultiBot.addMember(className, level, name)
+            -- Reflect the guild roster online flag (9th return) so offline guild bots are
+            -- greyed instead of all showing as online.
+            memberButton.state = online and true or false
+            addRosterMemberButton(memberButton)
         elseif name == nil or level == nil or className == nil then
             if inGuild and index < maxMembers then
                 needGuildRetry = true
@@ -488,9 +507,12 @@ local function rebuildGuildAndFriendIndexes(button)
     end
 
     for index = 1, maxFriends do
-        local name, level, className = GetFriendInfo(index)
+        local name, level, className, _, connected = GetFriendInfo(index)
         if name ~= nil and level ~= nil and className ~= nil and name ~= UnitName("player") then
-            addRosterMemberButton(MultiBot.addFriend(className, level, name))
+            local friendButton = MultiBot.addFriend(className, level, name)
+            -- Reflect the friend-list connected flag (5th return) so offline friends are greyed.
+            friendButton.state = connected and true or false
+            addRosterMemberButton(friendButton)
         elseif name == nil or level == nil or className == nil then
             needGuildRetry = true
         end

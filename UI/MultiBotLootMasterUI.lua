@@ -1869,7 +1869,10 @@ local function CreateBasicFrame()
         frame = widget.frame
         frame.widget = widget
         frame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
-        frame:SetFrameStrata("DIALOG")
+        local strataLevel = MultiBot.GetGlobalStrataLevel and MultiBot.GetGlobalStrataLevel()
+        if strataLevel then
+            frame:SetFrameStrata(strataLevel)
+        end
         frame:SetToplevel(true)
 
         contentParent = widget.content or frame
@@ -1879,7 +1882,10 @@ local function CreateBasicFrame()
         frame:SetWidth(FRAME_WIDTH)
         frame:SetHeight(FRAME_HEIGHT)
         frame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
-        frame:SetFrameStrata("DIALOG")
+        local strataLevel = MultiBot.GetGlobalStrataLevel and MultiBot.GetGlobalStrataLevel()
+        if strataLevel then
+            frame:SetFrameStrata(strataLevel)
+        end
         frame:SetToplevel(true)
         frame:SetMovable(true)
         frame:EnableMouse(true)

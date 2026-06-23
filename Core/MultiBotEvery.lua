@@ -74,6 +74,31 @@ local function addBotCombatButton(parent, name, x, y, icon, tip, enableCommand, 
   return button
 end
 
+-- Disable a named EveryBar button (e.g. "Spellbook"/"Talent") on every active bot except the
+-- player, so only one panel is "armed" at a time. Off-page bots in a large raid have NOT had
+-- their EveryBar frame built yet, so `units.frames[name]` is nil for them — an unguarded index
+-- here threw, aborting the click handler before it opened the panel (symptom: clicking
+-- Spellbook/Talent in a full raid did nothing). Guard every lookup.
+local function disableEveryButtonOnActives(buttonName)
+  local multiBar = MultiBot.frames and MultiBot.frames["MultiBar"]
+  local units = multiBar and multiBar.frames and multiBar.frames["Units"]
+  if not units then
+    return
+  end
+
+  local playerName = UnitName("player")
+  for _, value in pairs(MultiBot.index.actives or {}) do
+    local unitButton = units.buttons and units.buttons[value]
+    local frame = units.frames and units.frames[value]
+    if unitButton and unitButton.name ~= playerName and frame and frame.getButton then
+      local button = frame.getButton(buttonName)
+      if button and button.setDisable then
+        button.setDisable()
+      end
+    end
+  end
+end
+
 MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 
     -- MENU MISC --------------------------------------------
@@ -267,11 +292,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 			pButton.setDisable()
 		else
 			local tUnits = MultiBot.frames["MultiBar"].frames["Units"]
-			for key, value in pairs(MultiBot.index.actives) do
-				if(tUnits.buttons[value].name ~= UnitName("player")) then
-					tUnits.frames[value].getButton("Spellbook").setDisable()
-				end
-			end
+			disableEveryButtonOnActives("Spellbook")
 
 			pButton.setEnable()
 			MultiBot.spellbook.name = pButton.getName()
@@ -305,12 +326,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 			MultiBot.talent:Hide()
 			MultiBot.talent.doClear()
 
-			local tUnits = MultiBot.frames["MultiBar"].frames["Units"]
-			for key, value in pairs(MultiBot.index.actives) do
-				if(tUnits.buttons[value].name ~= UnitName("player")) then
-					tUnits.frames[value].getButton("Talent").setDisable()
-				end
-			end
+			disableEveryButtonOnActives("Talent")
 
 			InspectUnit(MultiBot.toUnit(pButton.getName()))
 			pButton.setEnable()

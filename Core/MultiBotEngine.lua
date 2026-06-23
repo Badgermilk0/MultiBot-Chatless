@@ -152,7 +152,9 @@ MultiBot.isRoster = function(pRoster, pName)
 end
 
 MultiBot.isMember = function(pName)
-	if(GetNumRaidMembers() > 5) then
+	-- Any raid size counts (a freshly party->raid converted group has 5 members; `> 5` left
+	-- it invisible because the party branch is also skipped while in a raid).
+	if(GetNumRaidMembers() > 0) then
 		for i = 1, GetNumRaidMembers() do
 			if(UnitName("raid" .. i) == pName) then return true end
 		end
@@ -233,7 +235,8 @@ MultiBot.toClass = function(pClass)
 end
 
 MultiBot.toUnit = function(pName)
-	if(GetNumRaidMembers() > 5) then
+	-- `> 0`, not `> 5`: a 1-5 member raid is still a raid (party unit tokens don't apply there).
+	if(GetNumRaidMembers() > 0) then
 		for i = 1, GetNumRaidMembers() do
 			if(UnitName("raid" .. i) == pName) then
 				return "raid" .. i

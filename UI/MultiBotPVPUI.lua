@@ -30,6 +30,26 @@ local function CreateStyledFrame()
     if f.SetBackdropColor then f:SetBackdropColor(0, 0, 0, 0.8) end
     if f.SetBackdropBorderColor then f:SetBackdropBorderColor(0.4, 0.4, 0.4, 1) end
 
+    -- Respect the user-configured global frame strata like the other MultiBot frames.
+    local strataLevel = MultiBot.GetGlobalStrataLevel and MultiBot.GetGlobalStrataLevel()
+    if strataLevel then
+        f:SetFrameStrata(strataLevel)
+    end
+
+    -- Close on ESC like the other windows.
+    if type(UISpecialFrames) == "table" then
+        local alreadyRegistered = false
+        for _, name in ipairs(UISpecialFrames) do
+            if name == "MultiBotPVPFrame" then
+                alreadyRegistered = true
+                break
+            end
+        end
+        if not alreadyRegistered then
+            tinsert(UISpecialFrames, "MultiBotPVPFrame")
+        end
+    end
+
     -- Header + title
     local titleBg = f:CreateTexture(nil, "ARTWORK")
     titleBg:SetTexture(MultiBot.SafeTexturePath("Interface\\DialogFrame\\UI-DialogBox-Header"))

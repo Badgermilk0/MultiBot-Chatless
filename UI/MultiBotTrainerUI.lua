@@ -136,7 +136,10 @@ function TrainerUI:EnsureWindow()
         frame = CreateFrame("Frame", "MultiBotTrainerFrame", UIParent)
         frame:SetSize(TRAINER_WINDOW_WIDTH, TRAINER_WINDOW_HEIGHT)
         frame:SetPoint("CENTER", UIParent, "CENTER", -120, 20)
-        frame:SetFrameStrata("DIALOG")
+        local strataLevel = MultiBot.GetGlobalStrataLevel and MultiBot.GetGlobalStrataLevel()
+        if strataLevel then
+            frame:SetFrameStrata(strataLevel)
+        end
         frame:EnableMouse(true)
         frame:SetMovable(true)
         frame:RegisterForDrag("LeftButton")

@@ -167,8 +167,8 @@ local DEFAULT_TALENT_HOST_CONTENT_LAYOUT = {
     GLYPH_OVERVIEW_TUNE_Y = 75, -- Décalage vertical du panneau principal de l'onglet Glyphes.
     GLYPH_SOCKETS_TUNE_X = 0, -- Décalage horizontal de toutes les sockets dans le panneau Glyphes.
     GLYPH_SOCKETS_TUNE_Y = 0, -- Décalage vertical de toutes les sockets dans le panneau Glyphes.
-    GLYPH_ICON_TUNE_X = -9, -- Décalage horizontal de l'icône affichée dans une socket de glyphe.
-    GLYPH_ICON_TUNE_Y = 8, -- Décalage vertical de l'icône affichée dans une socket de glyphe.
+    GLYPH_ICON_TUNE_X = 0, -- Décalage horizontal de l'icône affichée dans une socket de glyphe (0 = centré).
+    GLYPH_ICON_TUNE_Y = 0, -- Décalage vertical de l'icône affichée dans une socket de glyphe (0 = centré).
     GLYPH_ICON_SIZE_SCALE = 0.60, -- Échelle de taille des icônes glyphes (item/spell normal) relative à la socket.
     GLYPH_FALLBACK_ICON_SIZE_SCALE = 0.66, -- Échelle spécifique de l'icône fallback UI-GlyphFrame-Glow.blp relative à la socket.
 }
@@ -1161,8 +1161,8 @@ function MultiBot.InitializeTalentFrameModule()
         end
 
         local layout = MultiBot.TalentHostContentLayout or DEFAULT_TALENT_HOST_CONTENT_LAYOUT
-        local iconTuneX = layout.GLYPH_ICON_TUNE_X or -9
-        local iconTuneY = layout.GLYPH_ICON_TUNE_Y or 8
+        local iconTuneX = layout.GLYPH_ICON_TUNE_X or 0
+        local iconTuneY = layout.GLYPH_ICON_TUNE_Y or 0
         local sizeScale = isFallback and
             (layout.GLYPH_FALLBACK_ICON_SIZE_SCALE or layout.GLYPH_ICON_SIZE_SCALE or 0.66) or
             (layout.GLYPH_ICON_SIZE_SCALE or 0.66)
@@ -1240,23 +1240,49 @@ function MultiBot.InitializeTalentFrameModule()
                     runeTex:SetTexture(MultiBot.SafeTexturePath("Interface\\Spellbook\\UI-Glyph-Rune-" .. runeIdx))
                 end
 
+                -- Cache resolved item/spell display data so repeated glyph refreshes don't
+                -- re-query GetItemInfo/GetSpellInfo for the same ids every time (the main
+                -- cause of slow glyph rendering). Only successful lookups are cached, so an
+                -- id whose data has not reached the client yet can still resolve later.
+                local glyphCache = MultiBot.talent._glyphDisplayCache
+                if not glyphCache then
+                    glyphCache = { items = {}, spells = {} }
+                    MultiBot.talent._glyphDisplayCache = glyphCache
+                end
+
                 local itemName, itemTexture
                 if itemId > 0 then
-                    local itemInfo = { GetItemInfo(itemId) }
-                    itemName = itemInfo[1]
-                    itemTexture = itemInfo[10]
-                    if not itemTexture and type(GetItemIcon) == "function" then
-                        itemTexture = GetItemIcon(itemId)
+                    local cachedItem = glyphCache.items[itemId]
+                    if cachedItem then
+                        itemName, itemTexture = cachedItem[1], cachedItem[2]
+                    else
+                        local itemInfo = { GetItemInfo(itemId) }
+                        itemName = itemInfo[1]
+                        itemTexture = itemInfo[10]
+                        if not itemTexture and type(GetItemIcon) == "function" then
+                            itemTexture = GetItemIcon(itemId)
+                        end
+                        if itemTexture then
+                            glyphCache.items[itemId] = { itemName, itemTexture }
+                        end
                     end
                 end
 
                 local spellName, spellTexture
                 if spellId > 0 then
-                    local spellInfo = { GetSpellInfo(spellId) }
-                    spellName = spellInfo[1]
-                    spellTexture = spellInfo[3]
-                    if not spellTexture and type(GetSpellTexture) == "function" then
-                        spellTexture = GetSpellTexture(spellId)
+                    local cachedSpell = glyphCache.spells[spellId]
+                    if cachedSpell then
+                        spellName, spellTexture = cachedSpell[1], cachedSpell[2]
+                    else
+                        local spellInfo = { GetSpellInfo(spellId) }
+                        spellName = spellInfo[1]
+                        spellTexture = spellInfo[3]
+                        if not spellTexture and type(GetSpellTexture) == "function" then
+                            spellTexture = GetSpellTexture(spellId)
+                        end
+                        if spellTexture then
+                            glyphCache.spells[spellId] = { spellName, spellTexture }
+                        end
                     end
                 end
 

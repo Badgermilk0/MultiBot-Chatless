@@ -723,7 +723,7 @@ local function createIconosContent(window, iconos)
     searchLabel:SetPoint("BOTTOMLEFT", headerPanel, "BOTTOMLEFT", 12, 14)
     searchLabel:SetText(SEARCH or "Search")
 
-    local searchBox = CreateFrame("EditBox", nil, headerPanel, "InputBoxTemplate")
+    local searchBox = CreateFrame("EditBox", "MultiBotIconosSearchBox", headerPanel, "InputBoxTemplate")
     searchBox:SetAutoFocus(false)
     searchBox:SetPoint("LEFT", searchLabel, "RIGHT", 6, 0)
     searchBox:SetSize(88, ICONOS_UI_DEFAULTS.pathBoxHeight)
@@ -855,7 +855,7 @@ local function createIconosContent(window, iconos)
         recentButtons[index] = recentButton
     end
 
-    local pathBox = CreateFrame("EditBox", nil, pathPanel, "InputBoxTemplate")
+    local pathBox = CreateFrame("EditBox", "MultiBotIconosPathBox", pathPanel, "InputBoxTemplate")
     pathBox:SetAutoFocus(false)
     pathBox:SetPoint("TOPLEFT", pathPanel, "TOPLEFT", 10, -7)
     pathBox:SetPoint("BOTTOMRIGHT", pathPanel, "BOTTOMRIGHT", -10, 7)

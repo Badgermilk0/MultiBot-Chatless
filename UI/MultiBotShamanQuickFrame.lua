@@ -448,7 +448,7 @@ function ShamanQuick:CollectShamanBots()
 
         local name = GetUnitName(unit, true)
         local _, classToken = UnitClass(unit)
-        if classToken == "SHAMAN" and name and (not MultiBot.IsBot or MultiBot.IsBot(name)) then
+        if classToken == "SHAMAN" and name and MultiBot.IsBot and MultiBot.IsBot(name) then
             table.insert(names, name)
         end
     end
@@ -489,7 +489,7 @@ function ShamanQuick:SetManualVisibility(visible)
     end
 end
 
-function ShamanQuick:ApplyCollapsedState()
+function ShamanQuick:ApplyCollapsedState(count)
     if not self.window or not self.window.frame then
         return
     end
@@ -502,9 +502,11 @@ function ShamanQuick:ApplyCollapsedState()
         row:Hide()
     end
 
-    self.window:SetWidth(HANDLE_WIDTH)
-    self.window:SetHeight(HANDLE_HEIGHT)
-    self:UpdateToggleHandleLayout(true)
+    -- Keep the same window geometry as the expanded state so the toggle handle (the "×")
+    -- keeps a fixed screen position when collapsing/expanding. The window frame is invisible
+    -- and mouse-disabled (see stripWindowChrome), so the now-empty area is fully click-through.
+    self:UpdateWindowGeometry(count or #self:CollectShamanBots())
+    self:UpdateToggleHandleLayout(false)
 
     self.window:Show()
     self:RestorePosition()
@@ -949,7 +951,7 @@ function ShamanQuick:RefreshFromGroup()
         if manuallyVisible then
             self:ApplyExpandedState(#desiredNames)
         else
-            self:ApplyCollapsedState()
+            self:ApplyCollapsedState(#desiredNames)
         end
     elseif self.window then
         updateWindowTitle(self, 0)

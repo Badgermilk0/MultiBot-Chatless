@@ -285,15 +285,18 @@ MultiBot.setSpell = function(pIndex, pSpell, pName)
 	local tOverlay = MultiBot.spellbook.frames["Overlay"]
 
 	if(pSpell ~= nil) then
-		--local tTitle = MultiBot.IF(string.len(pSpell[2]) > 16, string.sub(pSpell[2], 1, 16) .. "...", pSpell[2])
+		-- Spell name beside the icon (truncated to fit the column; full name shows on hover).
+		local tSpellName = pSpell[2] or ""
+		local tMaxLen = tonumber(getSpellBookUI().NAME_MAX_LEN or 15) or 15
+		local tTitle = MultiBot.IF(string.len(tSpellName) > tMaxLen, string.sub(tSpellName, 1, tMaxLen) .. "...", tSpellName)
 		tOverlay.setButton("S" .. tIndex, pSpell[4], pSpell[5])
-		--tOverlay.setText("T" .. tIndex, "|cffffcc00" .. tTitle .. "|r")
+		tOverlay.setText("T" .. tIndex, "|cffffcc00" .. tTitle .. "|r")
 		tOverlay.setText("R" .. tIndex, "|cff" .. (getSpellBookUI().RANK_TEXT_COLOR_HEX or "ffcc00") .. pSpell[3] .. "|r")
 		tOverlay.buttons["S" .. tIndex].spell = pSpell[1]
 		tOverlay.buttons["C" .. tIndex].spell = pSpell[1]
 		tOverlay.buttons["S" .. tIndex].doShow()
 		tOverlay.buttons["C" .. tIndex].doShow()
-		--tOverlay.texts["T" .. tIndex]:Show()
+		tOverlay.texts["T" .. tIndex]:Show()
 		tOverlay.texts["R" .. tIndex]:Show()
 		tOverlay.buttons["C" .. tIndex]:SetChecked(MultiBot.spells[pName][pSpell[1]])
 		tOverlay.buttons["C" .. tIndex].doClick = function(pButton)

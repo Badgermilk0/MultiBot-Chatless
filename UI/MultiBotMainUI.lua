@@ -278,7 +278,8 @@ end
 
 local function toggleRaidus(button)
     if MultiBot.OnOffSwitch(button) then
-        MultiBot.raidus.setRaidus()
+        -- setRaidus() runs from the frame's OnShow handler so the pool is rebuilt while
+        -- the window is actually visible (correct layout/refresh on every open).
         MultiBot.raidus:Show()
         return
     end

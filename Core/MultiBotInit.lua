@@ -90,4 +90,3 @@ if MultiBot.InitializeRTSCUI then
 end
 
 MultiBot.state = true
-print("MultiBot")

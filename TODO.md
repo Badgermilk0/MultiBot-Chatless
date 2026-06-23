@@ -147,6 +147,15 @@
 
 * Nouvelle interface Spellbook.
 * Spellbook alimenté par bridge.
+* Correction « clic droit + glisser vers la barre d'action » : les icônes de sort
+  (`createSpellSlotButton`) n'appelaient pas `RegisterForClicks` (un Button ne déclenche
+  `OnClick` que sur LeftButtonUp par défaut), donc le clic droit (pickup macro) ne se
+  déclenchait jamais. Ajout de `RegisterForClicks("LeftButtonUp","RightButtonUp")` +
+  `RegisterForDrag("RightButton")`/`OnDragStart` pour que le glisser fonctionne littéralement.
+* Affichage du nom du sort à côté de l'icône : le FontString titre (`T<index>`) existait mais
+  était commenté dans `setSpell`. Réactivé (nom au-dessus du rang, police small, tronqué à
+  `NAME_MAX_LEN`=15 + « ... », nom complet au survol). Fenêtre élargie (360→480) et colonnes
+  réécartées (icône 2/138/274, texte 46/182/318) pour laisser la place au nom.
 * Interface talents améliorée.
 * Liste des specs alimentée par bridge.
 * Interface glyphes alimentée par bridge.
@@ -162,6 +171,28 @@
 * Roster/states/details sans spam `.playerbot bot list`.
 * Nouvelle interface Raidus.
 * Auto-Stats bridge-first.
+* Correction online/offline (vue Players) : `IsBridgeRosterBotActive` exige désormais
+  `UnitIsConnected` en plus de la présence dans le groupe (un slot raid/groupe garde le nom
+  après déconnexion, donc les bots hors-ligne s'affichaient « en ligne »).
+* Auto-invite robuste : la file mesure la progression sur l'appartenance réelle au groupe
+  (et non sur l'envoi de la commande) et re-parcourt le roster sur quelques tours
+  (`MAX_INVITE_ROUNDS`), pour qu'un bot dont l'`add` échoue côté serveur (ex. trop loin /
+  autre zone) soit ré-essayé au lieu de laisser un trou.
+* Invite de masse = remplir le raid uniquement : `.playerbot bot add` met le bot en ligne même
+  s'il ne peut pas être groupé (raid plein), donc la file note chaque bot tenté
+  (`invite.attempted`) et, à la fin, déconnecte (`.playerbot bot remove`) tout bot tenté qui
+  n'est pas dans le groupe — envois étalés via `TimerAfter` pour ne pas saturer le chat. Plus
+  de bot « orphelin » en ligne hors du raid.
+* Conversion groupe→raid pendant l'invite de masse : la file appelle `ConvertToRaid()` quand le
+  groupe est un groupe plein (vous + 4) avant d'ajouter le 5e bot. Sinon le 6e membre échoue
+  silencieusement (« groupe plein ») et le bot de la transition restait en ligne hors raid
+  (symptôme « Allin », simplement 5e dans le roster). `isMember`/`toUnit` : seuil raid corrigé
+  `> 5` → `> 0` pour reconnaître un raid de 5 fraîchement converti.
+* Boutons EveryBar Spellbook/Talent : clic sans effet en raid 40 corrigé. Les boucles
+  « désactiver chez les autres bots » parcouraient `index.actives` en indexant
+  `units.frames[value]` sans garde ; les bots hors-page n'ont pas encore de frame EveryBar →
+  erreur Lua avant l'ouverture du panneau. Extrait dans `disableEveryButtonOnActives` avec
+  gardes (comme `disableOtherInventoryButtons`).
 * Corrections UI Autostats :
   * adaptation de la frame au texte ;
   * correction du texte sacs tronqué ;

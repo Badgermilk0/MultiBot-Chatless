@@ -26,30 +26,35 @@ local SPELLBOOK_UI_DEFAULTS = {
 	-- Couleur du texte de pagination au format hex WoW (sans préfixe |cff).
 	PAGE_TEXT_COLOR_HEX = "ffffff",
 
-	-- Position des boutons précédent/suivant.
-	PREV_BUTTON_X = 115,
+	-- Position des boutons précédent/suivant (recentrés pour la fenêtre élargie).
+	PREV_BUTTON_X = 168,
 	PREV_BUTTON_Y = -270,
-	NEXT_BUTTON_X = 170,
+	NEXT_BUTTON_X = 223,
 	NEXT_BUTTON_Y = -270,
 	NAV_BUTTON_WIDTH = 18,
 	NAV_BUTTON_HEIGHT = 18,
 
 	-- Positions X des colonnes (icône, titre, rang) en layout 3 colonnes.
+	-- Colonnes élargies pour laisser la place au nom du sort à droite de chaque icône.
 	LEFT_ICON_X = 2,
-	MIDDLE_ICON_X = 112,
-	RIGHT_ICON_X = 222,
-	LEFT_TITLE_X = 34,
-	MIDDLE_TITLE_X = 144,
-	RIGHT_TITLE_X = 254,
-	LEFT_RANK_X = 44,
-	MIDDLE_RANK_X = 154,
-	RIGHT_RANK_X = 264,
+	MIDDLE_ICON_X = 138,
+	RIGHT_ICON_X = 274,
+	-- Nom + rang à droite de l'icône (icône = 40px), nom au-dessus du rang (même X).
+	LEFT_TITLE_X = 46,
+	MIDDLE_TITLE_X = 182,
+	RIGHT_TITLE_X = 318,
+	LEFT_RANK_X = 46,
+	MIDDLE_RANK_X = 182,
+	RIGHT_RANK_X = 318,
 
 	-- Réglages Y des lignes (base + espacement vertical).
 	ROW_SPACING_Y = 46,
 	ICON_BASE_Y = 10,
-	TITLE_BASE_Y = -28,
+	TITLE_BASE_Y = -2,
 	RANK_BASE_Y = -16,
+	-- Longueur max du nom de sort affiché à droite de l'icône (tronqué avec "..." au-delà ;
+	-- le nom complet reste visible dans l'infobulle au survol).
+	NAME_MAX_LEN = 15,
 
     -- Couleur des rangs au format hex WoW (sans préfixe |cff).
     RANK_TEXT_COLOR_HEX = "ffcc00",
@@ -154,6 +159,13 @@ local function createSpellSlotButton(parent, x, y)
 		return MultiBot.spellbook and MultiBot.spellbook.name or ""
 	end
 
+	-- A Button only fires OnClick for LeftButtonUp by default, so the right-click handler
+	-- (pick up the spell as a macro onto the cursor) never ran — "right-click and drag to your
+	-- hotbar" did nothing. Register right-clicks, and a right-button drag so the literal
+	-- click-and-drag works: OnDragStart picks the macro up; dropping it on an action slot places it.
+	button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	button:RegisterForDrag("RightButton")
+
 	button:SetScript("OnClick", function(self, pMouseButton)
 		if(pMouseButton == "LeftButton" and self.doLeft) then
 			self.doLeft(self)
@@ -161,6 +173,12 @@ local function createSpellSlotButton(parent, x, y)
 		end
 
 		if(pMouseButton == "RightButton" and self.doRight) then
+			self.doRight(self)
+		end
+	end)
+
+	button:SetScript("OnDragStart", function(self)
+		if(self.doRight) then
 			self.doRight(self)
 		end
 	end)
@@ -370,7 +388,8 @@ local function createSpellbookContent(window)
 		rank:SetText("|cff" .. (getSpellBookUI().RANK_TEXT_COLOR_HEX or "ffcc00") .. MultiBot.L("spellbook.rank") .. "|r")
 		tOverlay.texts["R" .. tIndex] = rank
 
-		local titleText = textLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		local titleText = textLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		titleText:SetJustifyH("LEFT")
 		titleText:SetPoint("TOPLEFT", textLayer, "TOPLEFT", tTitleX, tTextY)
 		titleText:SetDrawLayer("OVERLAY", getSafeTextDrawSubLevel())
 		titleText:SetText("|cffffcc00" .. MultiBot.L("spellbook.title") .. "|r")
@@ -398,7 +417,7 @@ function MultiBot.InitializeSpellBookFrame()
 
 	local window = aceGUI:Create("Window")
 	window:SetTitle(SPELLBOOK)
-	window:SetWidth(360)
+	window:SetWidth(480)
 	window:SetHeight(390)
 	window:EnableResize(false)
 	window:SetLayout("Fill")
