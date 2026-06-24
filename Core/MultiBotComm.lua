@@ -2768,10 +2768,8 @@ function Comm.HandleAddonMessage(prefix, message, distribution, sender)
       local inventory = getInventoryFrame()
       local itemsFrame = inventory and inventory.frames and inventory.frames.Items or nil
       if itemsFrame and itemsFrame.addChatItem then
+        -- L-1: only accumulate here; INV_END repaints the canvas once for the whole batch.
         itemsFrame:addChatItem(urlDecodeField(encodedLine))
-        if itemsFrame.updateCanvas then
-          itemsFrame:updateCanvas()
-        end
       end
     end
 
