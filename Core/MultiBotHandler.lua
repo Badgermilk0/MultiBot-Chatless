@@ -37,6 +37,25 @@ local function BridgeBootOwnsState()
 	return false
 end
 
+-- Defensive accessors for the Units roster container. The MultiBar/Units frame tree
+-- may not exist yet during early init or a partial reload, so chain through it safely
+-- instead of indexing MultiBot.frames["MultiBar"].frames["Units"] directly (which throws
+-- on any missing intermediate). Mirrors the guarded style in MultiBotEvery.lua.
+local function unitsContainer()
+	local multiBar = MultiBot.frames and MultiBot.frames["MultiBar"]
+	return multiBar and multiBar.frames and multiBar.frames["Units"] or nil
+end
+
+local function unitsButton(name)
+	local units = unitsContainer()
+	return units and units.buttons and units.buttons[name] or nil
+end
+
+local function unitsFrame(name)
+	local units = unitsContainer()
+	return units and units.frames and units.frames[name] or nil
+end
+
 -- Request a fresh roster/states/details snapshot from the bridge. The handshake can
 -- complete a short while after login/reload, so retry until the bridge reports connected
 -- instead of giving up after a single attempt (which left the Units bar showing bots as
@@ -1880,7 +1899,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 		if(MultiBot.isInside(arg1, "player already logged in")) then
 			local tName = string.sub(arg1, 6, string.find(arg1, " ", 6) - 1)
-			local tButton = MultiBot.frames["MultiBar"].frames["Units"].buttons[tName]
+			local tButton = unitsButton(tName)
 			if(tButton == nil) then return end
 
             if(MultiBot.isMember(tName)) then
@@ -1913,8 +1932,8 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 		if(MultiBot.isInside(arg1, "remove: ")) then
 			local tName = string.sub(arg1, 9, string.find(arg1, " ", 9) - 1)
-			local tFrame = MultiBot.frames["MultiBar"].frames["Units"].frames[tName]
-			local tButton = MultiBot.frames["MultiBar"].frames["Units"].buttons[tName]
+			local tFrame = unitsFrame(tName)
+			local tButton = unitsButton(tName)
 			if(tButton == nil) then return end
 
 			if(MultiBot.isInside(arg1, "not your bot")) then
@@ -1931,7 +1950,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 		if(arg1 == "Enable player botAI") then
 			local tName = UnitName("player")
-			local tButton = MultiBot.frames["MultiBar"].frames["Units"].buttons[tName]
+			local tButton = unitsButton(tName)
 			if(tButton == nil) then return end
 			if LegacyChatFallbackEnabled() then
 				tButton.waitFor = "CO"
@@ -1945,8 +1964,8 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 		if(arg1 == "Disable player botAI") then
 			local tName = UnitName("player")
-			local tFrame = MultiBot.frames["MultiBar"].frames["Units"].frames[tName]
-			local tButton = MultiBot.frames["MultiBar"].frames["Units"].buttons[tName]
+			local tFrame = unitsFrame(tName)
+			local tButton = unitsButton(tName)
 			if(tButton == nil) then return end
 			if(tFrame ~= nil) then tFrame:Hide() end
 			tButton.setDisable()
@@ -2079,7 +2098,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 		if(MultiBot.auto.release == true) then
 			-- Graveyard not ready to talk Bot in the chinese Version --
 			if(arg1 == "在墓地见我") then
-				MultiBot.frames["MultiBar"].frames["Units"].buttons[arg2].waitFor = "你好"
+				local tGyButton = unitsButton(arg2); if(tGyButton ~= nil) then tGyButton.waitFor = "你好" end
 				return
 			end
 
@@ -2110,7 +2129,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 		-- REQUIREMENT --
 
-		local tButton = MultiBot.frames["MultiBar"].frames["Units"].buttons[arg2]
+		local tButton = unitsButton(arg2)
 
 		if(MultiBot.auto.release == true) then
 			-- Graveyard ready to talk Bot in the chinese Version --
@@ -2420,12 +2439,12 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 			if(MultiBot.isInside(arg1, "获得了物品")) then
 				local tName = MultiBot.doReplace(MultiBot.doSplit(arg1, ":")[1], "获得了物品", "")
-				tButton = MultiBot.frames["MultiBar"].frames["Units"].buttons[tName]
+				tButton = unitsButton(tName)
 			end
 
 			if(MultiBot.isInside(string.lower(arg1), "beute", "receives")) then
 				local tName = MultiBot.doSplit(arg1, " ")[1]
-				tButton = MultiBot.frames["MultiBar"].frames["Units"].buttons[tName]
+				tButton = unitsButton(tName)
 			end
 
 			if(tButton ~= nil and MultiBot.inventory and MultiBot.inventory.handleLootReceived

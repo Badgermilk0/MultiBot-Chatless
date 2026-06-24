@@ -9,7 +9,7 @@ local Comm = MultiBot.Comm or {}
 MultiBot.Comm = Comm
 
 Comm.prefix = "MBOT"
-Comm.version = "1"
+Comm.version = "2" -- v2: ROSTER streamed (ROSTER_BEGIN/ITEM/END); DETAILS/STATES always terminated.
 
 local function safeNow()
   if type(GetTime) == "function" then
@@ -190,8 +190,70 @@ local function buildMessage(opcode, payload)
   return message
 end
 
+-- Bridge send pacing (A2): a FIFO token-bucket so bursts of GET~/RUN~ requests
+-- (bootstrap, or opening a bot's full panel which fires ~9 requests) are spread
+-- out instead of being silently dropped by the client's addon-message throttle.
+-- Reuses the same rate/burst the chat throttle (MultiBotThrottle.lua) uses.
+local sendQueue = {}
+local sendTokens = nil
+local sendLastRefill = nil
+local sendFlushArmed = false
+
+local function throttleRate()
+  local v = MultiBot and type(MultiBot.GetThrottleRate) == "function" and MultiBot.GetThrottleRate()
+  if type(v) == "number" and v > 0 then
+    return v
+  end
+  return 5
+end
+
+local function throttleBurst()
+  local v = MultiBot and type(MultiBot.GetThrottleBurst) == "function" and MultiBot.GetThrottleBurst()
+  if type(v) == "number" and v > 0 then
+    return v
+  end
+  return 8
+end
+
+local function rawSend(item)
+  if item.channel == "WHISPER" then
+    SendAddonMessage(Comm.prefix, item.message, item.channel, item.target)
+  else
+    SendAddonMessage(Comm.prefix, item.message, item.channel)
+  end
+
+  if MultiBot.bridge then
+    MultiBot.bridge.lastSendAt = safeNow()
+  end
+  debugPrint("ADDON:TX", item.channel, item.opcode, item.payload or "")
+end
+
+local function flushSendQueue()
+  sendFlushArmed = false
+
+  local burst = throttleBurst()
+  local now = safeNow()
+  if sendTokens == nil then
+    sendTokens = burst
+    sendLastRefill = now
+  else
+    sendTokens = math.min(burst, sendTokens + (now - (sendLastRefill or now)) * throttleRate())
+    sendLastRefill = now
+  end
+
+  while sendTokens >= 1 and #sendQueue > 0 do
+    rawSend(table.remove(sendQueue, 1))
+    sendTokens = sendTokens - 1
+  end
+
+  if #sendQueue > 0 and not sendFlushArmed and type(MultiBot.TimerAfter) == "function" then
+    sendFlushArmed = true
+    MultiBot.TimerAfter(1 / math.max(throttleRate(), 1), flushSendQueue)
+  end
+end
+
 function Comm.Send(opcode, payload)
-  local state = ensureBridgeState()
+  ensureBridgeState()
   local playerName = getPlayerName()
   if not playerName or type(SendAddonMessage) ~= "function" then
     return false
@@ -204,15 +266,14 @@ function Comm.Send(opcode, payload)
     channel = "PARTY"
   end
 
-  local message = buildMessage(opcode, payload)
-  if channel == "WHISPER" then
-    SendAddonMessage(Comm.prefix, message, channel, playerName)
-  else
-    SendAddonMessage(Comm.prefix, message, channel)
-  end
-
-  state.lastSendAt = safeNow()
-  debugPrint("ADDON:TX", channel, opcode, payload or "")
+  sendQueue[#sendQueue + 1] = {
+    message = buildMessage(opcode, payload),
+    channel = channel,
+    target = playerName,
+    opcode = opcode,
+    payload = payload,
+  }
+  flushSendQueue()
   return true
 end
 
@@ -872,26 +933,96 @@ function Comm.RunInventoryItemAction(name, action, itemId, count)
   return token
 end
 
+-- Active bridge requests (D2/A1): single-shot slots hold one in-flight request each
+-- (overwritten when a newer request of the same kind starts); the multi-tables hold
+-- many keyed by token. Both entries carry startedAt, so a watchdog can expire any
+-- whose reply never arrived (server restart, dropped addon message) instead of
+-- leaking the multi-table entry forever and leaving the UI stuck "loading".
+local SINGLE_SHOT_REQUEST_SLOTS = {
+  "talentSpecActive", "inventoryActive", "bankActive", "guildBankActive",
+  "spellbookActive", "botSkillActive", "botReputationActive", "botEmblemActive",
+  "professionRecipeActive", "outfitActive", "trainerActive", "glyphActive",
+}
+
+local MULTI_REQUEST_TABLES = {
+  "questActive", "gameObjectActive", "inventoryItemActions",
+  "professionRecipeCrafts", "outfitCommands", "trainerCommands",
+}
+
+local function clearActiveRequests(state)
+  for _, slot in ipairs(SINGLE_SHOT_REQUEST_SLOTS) do
+    state[slot] = nil
+  end
+  for _, name in ipairs(MULTI_REQUEST_TABLES) do
+    state[name] = {}
+  end
+end
+
+local function requestTimeoutSeconds()
+  local v = MultiBot and type(MultiBot.GetRequestTimeout) == "function" and MultiBot.GetRequestTimeout()
+  if type(v) == "number" and v > 0 then
+    return v
+  end
+  return 10
+end
+
+local function expireRequestEntry(kind, entry)
+  debugPrint("ADDON:TIMEOUT", kind, entry and entry.botName or "")
+  if type(MultiBot.OnBridgeRequestTimeout) == "function" then
+    MultiBot.OnBridgeRequestTimeout(kind, entry)
+  end
+end
+
+function Comm.SweepStaleRequests()
+  local state = ensureBridgeState()
+  local now = safeNow()
+  local timeout = requestTimeoutSeconds()
+
+  for _, slot in ipairs(SINGLE_SHOT_REQUEST_SLOTS) do
+    local entry = state[slot]
+    if type(entry) == "table" and type(entry.startedAt) == "number" and (now - entry.startedAt) > timeout then
+      state[slot] = nil
+      expireRequestEntry(slot, entry)
+    end
+  end
+
+  for _, name in ipairs(MULTI_REQUEST_TABLES) do
+    local tbl = state[name]
+    if type(tbl) == "table" then
+      for token, entry in pairs(tbl) do
+        if type(entry) == "table" and type(entry.startedAt) == "number" and (now - entry.startedAt) > timeout then
+          tbl[token] = nil
+          expireRequestEntry(name, entry)
+        end
+      end
+    end
+  end
+end
+
+function Comm.StartRequestWatchdog()
+  local state = ensureBridgeState()
+  if state.watchdogArmed or type(MultiBot.TimerAfter) ~= "function" then
+    return
+  end
+  state.watchdogArmed = true
+
+  local function tick()
+    Comm.SweepStaleRequests()
+    MultiBot.TimerAfter(2.5, tick)
+  end
+
+  MultiBot.TimerAfter(2.5, tick)
+end
+
 function Comm.MarkDisconnected(reason)
   local state = ensureBridgeState()
   state.connected = false
   state.server = nil
   state.protocol = nil
   state.lastError = reason or nil
-  state.inventoryActive = nil
-  state.bankActive = nil
-  state.guildBankActive = nil
-  state.inventoryItemActions = {}
-  state.spellbookActive = nil
-  state.botSkillActive = nil
-  state.botReputationActive = nil
-  state.botEmblemActive = nil
-  state.professionRecipeActive = nil
-  state.professionRecipeCrafts = {}
-  state.outfitActive = nil
-  state.outfitCommands = {}
-  state.trainerActive = nil
-  state.trainerCommands = {}
+  state.lastRosterSignature = nil
+  state.rosterStream = nil
+  clearActiveRequests(state)
 end
 
 local function parseBridgeDetailPayload(payload)
@@ -956,8 +1087,21 @@ local function parseRosterEntry(entry)
     fields[#fields + 1] = value
   end
 
+  -- A7: a well-formed entry has 7 fields; log truncated/garbled ones instead of silently
+  -- dropping them (still parsed leniently below, missing fields defaulting to 0).
+  if #fields < 7 then
+    debugPrint("ADDON:RX", "ROSTER_ENTRY_MALFORMED", entry or "")
+  end
+
+  -- The name is URL-encoded by the server (protocol v2); decoding a plain v1 name is a
+  -- no-op, so this stays compatible with a single-message ROSTER from an older bridge.
+  local name = trim(urlDecodeField(fields[1] or ""))
+  if name == "" then
+    return nil
+  end
+
   return {
-    name = fields[1],
+    name = name,
     classId = tonumber(fields[2] or "0") or 0,
     level = tonumber(fields[3] or "0") or 0,
     mapId = tonumber(fields[4] or "0") or 0,
@@ -967,28 +1111,92 @@ local function parseRosterEntry(entry)
   }
 end
 
+local function pruneCacheByRoster(cache, nameSet)
+  if type(cache) ~= "table" then
+    return
+  end
+  for key in pairs(cache) do
+    if not nameSet[key] then
+      cache[key] = nil
+    end
+  end
+end
+
+-- Shared roster commit: prune per-bot caches (A3), refresh the UI, and only re-pull
+-- bot details when membership actually changed (A5). Used by both the legacy single
+-- ROSTER message and the v2 ROSTER_BEGIN/ITEM/END stream.
+local function commitRoster(state, roster)
+  state.roster = roster
+
+  local nameSet = {}
+  local names = {}
+  for _, entry in ipairs(roster) do
+    local key = string.lower(entry.name)
+    if not nameSet[key] then
+      nameSet[key] = true
+      names[#names + 1] = key
+    end
+  end
+
+  pruneCacheByRoster(state.states, nameSet)
+  pruneCacheByRoster(state.details, nameSet)
+  pruneCacheByRoster(state.stats, nameSet)
+  pruneCacheByRoster(state.pvpStats, nameSet)
+
+  if MultiBot.SyncBridgeRosterToPlayers then
+    MultiBot.SyncBridgeRosterToPlayers(roster)
+  end
+
+  table.sort(names)
+  local signature = table.concat(names, ",")
+  if state.connected and Comm.RequestBotDetails and signature ~= state.lastRosterSignature then
+    state.lastRosterSignature = signature
+    Comm.RequestBotDetails()
+  end
+
+  debugPrint("ADDON:RX", "ROSTER", tostring(#roster))
+  return roster
+end
+
+-- Legacy single-message ROSTER (protocol v1): "name,class,...;name,class,..." .
 function Comm.ApplyRosterPayload(payload)
   local state = ensureBridgeState()
   local roster = {}
 
   if type(payload) == "string" and payload ~= "" then
     for entry in string.gmatch(payload, "([^;]+)") do
-      roster[#roster + 1] = parseRosterEntry(entry)
+      local parsed = parseRosterEntry(entry)
+      if parsed then
+        roster[#roster + 1] = parsed
+      end
     end
   end
 
-  state.roster = roster
+  return commitRoster(state, roster)
+end
 
-  if MultiBot.SyncBridgeRosterToPlayers then
-    MultiBot.SyncBridgeRosterToPlayers(roster)
+-- v2 chunked ROSTER stream: accumulate one ROSTER_ITEM per bot between BEGIN and END so
+-- a large raid roster can never be truncated by the addon-message length limit.
+function Comm.BeginRosterStream()
+  ensureBridgeState().rosterStream = {}
+end
+
+function Comm.AppendRosterStreamItem(payload)
+  local state = ensureBridgeState()
+  if type(state.rosterStream) ~= "table" then
+    state.rosterStream = {}
   end
-
-  if state.connected and Comm.RequestBotDetails then
-    Comm.RequestBotDetails()
+  local parsed = parseRosterEntry(payload)
+  if parsed then
+    state.rosterStream[#state.rosterStream + 1] = parsed
   end
+end
 
-  debugPrint("ADDON:RX", "ROSTER", tostring(#roster))
-  return roster
+function Comm.EndRosterStream()
+  local state = ensureBridgeState()
+  local roster = state.rosterStream or {}
+  state.rosterStream = nil
+  return commitRoster(state, roster)
 end
 
 function Comm.ApplyStatePayload(payload)
@@ -2266,6 +2474,27 @@ function Comm.HandleAddonMessage(prefix, message, distribution, sender)
     return true
   end
 
+  if opcode == "ROSTER_BEGIN" then
+    state.connected = true
+    state.lastError = nil
+    Comm.BeginRosterStream()
+    return true
+  end
+
+  if opcode == "ROSTER_ITEM" then
+    state.connected = true
+    state.lastError = nil
+    Comm.AppendRosterStreamItem(payload)
+    return true
+  end
+
+  if opcode == "ROSTER_END" then
+    state.connected = true
+    state.lastError = nil
+    Comm.EndRosterStream()
+    return true
+  end
+
   if opcode == "STATE" then
     state.connected = true
     state.lastError = nil
@@ -3224,13 +3453,9 @@ function Comm.OnPlayerEnteringWorld()
   state.professionRecipeCrafts = {}
   state.outfitActive = nil
   state.outfitCommands = {}
-  state.trainerActive = nil
-  state.trainerCommands = {}
   state.trainerSpells = {}
   Comm.MarkDisconnected(nil)
-  state.trainerActive = nil
-  state.trainerCommands = {}
-  state.trainerSpells = {}
+  Comm.StartRequestWatchdog()
   state.bootstrapPending = true
   state.bootstrapDeadline = safeNow() + 4.0
 

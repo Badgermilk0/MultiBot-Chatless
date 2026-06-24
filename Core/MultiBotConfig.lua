@@ -208,6 +208,21 @@ function MultiBot.GetTimer(name)
   return DEFAULTS[name]
 end
 
+-- Bridge request watchdog (A1): how long a pending GET~/RUN~ request may wait for
+-- its reply before Comm.SweepStaleRequests expires it. Optional override lives at
+-- config.timers.request; kept out of the timers-slider DEFAULTS on purpose so it
+-- doesn't appear in the standard timer UI.
+local REQUEST_TIMEOUT_DEFAULT = 10
+
+function MultiBot.GetRequestTimeout()
+  local config = getConfigStore(false)
+  local value = config and config.timers and config.timers.request
+  if type(value) == "number" and value > 0 then
+    return value
+  end
+  return REQUEST_TIMEOUT_DEFAULT
+end
+
 -- Reset elapsed counters (one or all)
 function MultiBot.ApplyTimerChanges(name)
   if not (MultiBot and MultiBot.timer) then return end
