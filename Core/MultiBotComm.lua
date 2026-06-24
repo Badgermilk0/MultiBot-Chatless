@@ -228,9 +228,7 @@ local function rawSend(item)
   debugPrint("ADDON:TX", item.channel, item.opcode, item.payload or "")
 end
 
-local function flushSendQueue()
-  sendFlushArmed = false
-
+local function drainSendQueue()
   local burst = throttleBurst()
   local now = safeNow()
   if sendTokens == nil then
@@ -245,11 +243,21 @@ local function flushSendQueue()
     rawSend(table.remove(sendQueue, 1))
     sendTokens = sendTokens - 1
   end
+end
 
-  if #sendQueue > 0 and not sendFlushArmed and type(MultiBot.TimerAfter) == "function" then
-    sendFlushArmed = true
-    MultiBot.TimerAfter(1 / math.max(throttleRate(), 1), flushSendQueue)
+-- Keep exactly one flush timer pending while the queue drains: sendFlushArmed only flips
+-- inside the timer callback, so direct calls from Comm.Send never schedule duplicate timers.
+local function scheduleFlush()
+  if #sendQueue == 0 or sendFlushArmed or type(MultiBot.TimerAfter) ~= "function" then
+    return
   end
+
+  sendFlushArmed = true
+  MultiBot.TimerAfter(1 / math.max(throttleRate(), 1), function()
+    sendFlushArmed = false
+    drainSendQueue()
+    scheduleFlush()
+  end)
 end
 
 function Comm.Send(opcode, payload)
@@ -273,7 +281,8 @@ function Comm.Send(opcode, payload)
     opcode = opcode,
     payload = payload,
   }
-  flushSendQueue()
+  drainSendQueue()
+  scheduleFlush()
   return true
 end
 
@@ -3429,30 +3438,20 @@ end
 
 function Comm.OnPlayerEnteringWorld()
   local state = ensureBridgeState()
+  -- Reset snapshot caches (per-bot data). In-flight request slots/tables are cleared by
+  -- Comm.MarkDisconnected -> clearActiveRequests below, so they're not repeated here.
   state.states = {}
   state.details = {}
   state.stats = {}
   state.pvpStats = {}
   state.quests = {}
-  state.questActive = {}
   state.gameObjects = {}
-  state.gameObjectActive = {}
   state.talentSpecs = {}
-  state.talentSpecActive = nil
-  state.inventoryActive = nil
-  state.spellbookActive = nil
   state.botSkills = {}
-  state.botSkillActive = nil
   state.botReputations = {}
-  state.botReputationActive = nil
   state.botEmblems = {}
   state.botEmblemMoney = {}
-  state.botEmblemActive = nil
   state.professionRecipes = {}
-  state.professionRecipeActive = nil
-  state.professionRecipeCrafts = {}
-  state.outfitActive = nil
-  state.outfitCommands = {}
   state.trainerSpells = {}
   Comm.MarkDisconnected(nil)
   Comm.StartRequestWatchdog()
