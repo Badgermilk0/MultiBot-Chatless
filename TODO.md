@@ -4,15 +4,13 @@
 
 * Il semble y'avoir une regression, quand je me déconnecte et reconnecte l'UI du groupe nblizzard n'est pas refresh les bots restent en inconne je suis obligé de faire un reload
 * Quand je fais addclass bots on m'envoi que des bots level 1 même si je suis level 80
-* Nouveau outfit par bridge : vérifier le cas de deux armes à deux mains, le bot ne les équipe pas.
 * Inventaire bridge : vérifier qu'il n'y a plus de limite visuelle ou logique à 16 emplacements.
 * Recentrer les icônes des glyphes.
-* Glyphes : analyser pourquoi l'affichage est lent.
+* Glyphes : affichage lent — côté serveur corrigé (`FindGlyphItemId` indexe désormais les items glyphes en une seule passe DB au lieu d'une requête par slot au premier affichage). Vérifier s'il reste une lenteur côté client (chargement item/tooltip).
 * Quick Shaman / Quick Hunter : faire en sorte que la croix de fermeture reste à la même place quand on ferme la frame.
 * Quick bars : ne pas faire apparaître les quick bars pour les joueurs humains.
 * Raidus : rafraîchir correctement à l'ouverture et à la fermeture.
 * Raidus : ajouter un bouton pour enlever les bots inconnus et les supprimer aussi des SavedVariables.
-* Quêtes : dans la liste des quêtes, corriger les cas où l'ID de quête apparaît à la place du titre. quand on rouvre c'est ok
 * Talents / glyphes : revoir `UI/MultiBotTalent`, car il y a eu des modifications dans le fichier `.conf` de MultiBot.
 * J'ai l'impression que le disperse ne fait rien
 * Refaire uns passe pour que toutes les frames respectent le strata de la config.
@@ -131,6 +129,8 @@
 * Combat Strategies bridge-first.
 * Disperse bridge-first.
 * Loot Rules bridge-first.
+* Quêtes : le serveur envoie maintenant le vrai titre de la quête (et plus l'ID) dans `QUESTS_ITEM`, donc la liste affiche le nom dès la première ouverture.
+* Outfits bridge : équipement de deux armes à deux mains (Titan's Grip) — la seconde arme part désormais en main gauche au lieu d'être ignorée.
 
 ### Inventory / Inspect / Outfits
 

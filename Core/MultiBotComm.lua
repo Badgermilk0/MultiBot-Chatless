@@ -1235,6 +1235,8 @@ function Comm.ApplyStatePayload(payload)
   return entry
 end
 
+-- v1/back-compat: a v2 server sends per-bot STATE packets plus an empty STATES terminator, never a
+-- ';'-joined aggregate. Kept so a v2 addon still understands an older single-message bridge.
 function Comm.ApplyStatesPayload(payload)
   local applied = 0
 
@@ -1303,6 +1305,8 @@ function Comm.ApplyBotProfessionPayload(payload)
   return entry
 end
 
+-- v1/back-compat: a v2 server sends per-bot PROFESSION packets plus an empty PROFESSIONS terminator,
+-- never a '|'-joined aggregate. Kept so a v2 addon still understands an older single-message bridge.
 function Comm.ApplyBotProfessionsPayload(payload)
   local applied = 0
 
@@ -2150,6 +2154,8 @@ function Comm.ApplyGlyphsItemPayload(payload)
   return true
 end
 
+-- v1/back-compat: a v2 server streams glyphs as GLYPHS_BEGIN/ITEM/END, never this single
+-- 'itemId:glyphId:spellId:type' GLYPHS blob. Kept for an older single-message bridge.
 function Comm.ApplyGlyphsPayload(payload)
   local botName, rest = splitOnce(payload or "", "~")
   local token, entries = splitOnce(rest or "", "~")
@@ -2426,6 +2432,22 @@ end
 function Comm.HandleAddonMessage(prefix, message, distribution, sender)
   if prefix ~= Comm.prefix then
     return false
+  end
+
+  -- The bridge always routes its replies back to the requester, so a legitimate message's sender
+  -- is always ourselves. Reject anything else (e.g. a grouped player whispering/party-broadcasting
+  -- a crafted MBOT message) so it can't inject fake roster/state/etc. data into our UI. Fail open
+  -- when the sender is unknown to avoid dropping any edge-case delivery path.
+  if type(sender) == "string" and sender ~= "" then
+    local selfName = getPlayerName()
+    if selfName then
+      local senderShort = (sender:gsub("%-.*$", ""))
+      local selfShort = (selfName:gsub("%-.*$", ""))
+      if senderShort ~= selfShort then
+        debugPrint("ADDON:RX", "REJECT_SENDER", sender)
+        return false
+      end
+    end
   end
 
   local state = ensureBridgeState()
