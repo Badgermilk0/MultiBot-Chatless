@@ -1736,21 +1736,14 @@ function MultiBot.HandleMultiBotEvent(event, ...)
             if not (MultiBot.frames and MultiBot.frames["MultiBar"]
                     and MultiBot.frames["MultiBar"].frames
                     and MultiBot.frames["MultiBar"].frames["Units"]) then
-                -- UI pas encore prête : on re-propulse le même event vers NOTRE OnEvent
+                -- UI pas encore prête : re-dispatch the same event through the parameterized
+                -- dispatcher. (The old version set the deprecated event/arg1 GLOBALS and called
+                -- the OnEvent script with no arguments — a silent no-op since the handler reads
+                -- its parameters, so the roster line was dropped.)
                 local saved_msg = arg1
-
-                local function ReDispatchRoster()
-                    local onEvent = MultiBot:GetScript("OnEvent")
-                    if onEvent then
-                        -- Sauvegarde/restaure les globals d’événement
-                        local _event, _arg1 = event, arg1
-                        event, arg1 = "CHAT_MSG_SYSTEM", saved_msg
-                        onEvent()
-                        event, arg1 = _event, _arg1
-                    end
-                end
-
-                MultiBot.TimerAfter(0.2, ReDispatchRoster)
+                MultiBot.TimerAfter(0.2, function()
+                    MultiBot.DispatchEvent("CHAT_MSG_SYSTEM", saved_msg)
+                end)
                 return
             end
 
@@ -2512,8 +2505,25 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 	-- QUEST:CHANGED --
 
 	if(event == "QUEST_LOG_UPDATE") then
-		local tButton = MultiBot.frames["MultiBar"].frames["Right"].buttons["Quests"]
-		tButton.doRight(tButton)
+		-- QUEST_LOG_UPDATE fires in bursts (several times per quest change), so coalesce to
+		-- one refresh per burst; and chain through the frame tree defensively — during early
+		-- init the Right/Quests button may not exist yet and the old direct index threw here.
+		if(MultiBot._questLogRefreshPending) then return end
+		MultiBot._questLogRefreshPending = true
+
+		local function runQuestLogRefresh()
+			MultiBot._questLogRefreshPending = nil
+			local multiBar = MultiBot.frames and MultiBot.frames["MultiBar"]
+			local rightFrame = multiBar and multiBar.frames and multiBar.frames["Right"]
+			local tButton = rightFrame and rightFrame.buttons and rightFrame.buttons["Quests"]
+			if(tButton and tButton.doRight) then tButton.doRight(tButton) end
+		end
+
+		if(MultiBot.TimerAfter) then
+			MultiBot.TimerAfter(0.1, runQuestLogRefresh)
+		else
+			runQuestLogRefresh()
+		end
 		return
 	end
 

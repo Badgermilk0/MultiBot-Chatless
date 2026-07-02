@@ -1985,7 +1985,10 @@ MultiBot.SellAllBots = function(pCommand)
 	for key, btn in pairs(units.buttons) do
 		if type(btn) == "table" then
 			local botName = btn.name or (btn.getName and btn.getName()) or key
-			if botName and botName ~= "" then
+			-- units.buttons also holds guild members / friends (potentially human players)
+			-- and offline bots — only whisper confirmed, online bots (same guard as the
+			-- Quick bars: MultiBot.IsBot is never true for the player or unknown humans).
+			if botName and botName ~= "" and btn.state and MultiBot.IsBot(botName) then
 				SendChatMessage(pCommand, "WHISPER", nil, botName)
 				count = count + 1
 			end
@@ -2023,7 +2026,9 @@ MultiBot.MaintenanceAllBots = function()
 	for key, btn in pairs(units.buttons) do
 		if type(btn) == "table" then
 			local botName = btn.name or (btn.getName and btn.getName()) or key
-			if botName and botName ~= "" then
+			-- Same guard as SellAllBots: never whisper humans (guild/friend rosters) or
+			-- offline bots.
+			if botName and botName ~= "" and btn.state and MultiBot.IsBot(botName) then
 				SendChatMessage("maintenance", "WHISPER", nil, botName)
 				count = count + 1
 			end

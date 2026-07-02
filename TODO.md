@@ -131,6 +131,14 @@
 * Loot Rules bridge-first.
 * Quêtes : le serveur envoie maintenant le vrai titre de la quête (et plus l'ID) dans `QUESTS_ITEM`, donc la liste affiche le nom dès la première ouverture.
 * Outfits bridge : équipement de deux armes à deux mains (Titan's Grip) — la seconde arme part désormais en main gauche au lieu d'être ignorée.
+* Audit v2 (juillet 2026) — corrections :
+  * `GetItemInfo(id numérique)` (classe de hard-crash client) supprimé des dernières frames qui l'utilisaient : banque/BDG, toast d'action d'objet, Infos personnage (emblèmes + matériaux de recettes), glyphes du TalentFrame. Nom d'objet résolu via le nouveau helper crash-safe `MultiBot.GetSafeItemName` (tooltip caché, même patron que `GetLocalizedQuestName`), icône via `GetItemIcon`, nom/lien banque parsés depuis la ligne bridge.
+  * Watchdog × file d'envoi : `startedAt` d'une requête est maintenant re-tamponné au moment de l'envoi réel (`rawSend`), plus à la création — une requête en attente dans la file ne peut plus expirer avant d'avoir été transmise.
+  * `MultiBot.OnBridgeRequestTimeout` implémenté (il était appelé mais jamais défini) : message chat throttlé par type de requête + statut « Request timed out » dans la frame banque/BDG si elle est ouverte.
+  * `QUEST_LOG_UPDATE` : handler sécurisé (chaîne de frames défensive) et coalescé (1 refresh par rafale d'événements).
+  * Re-dispatch du roster au login corrigé : l'ancienne version posait les globals `event`/`arg1` dépréciés et appelait le script OnEvent sans arguments (no-op silencieux) ; passe maintenant par `MultiBot.DispatchEvent`.
+  * `SellAllBots` / `MaintenanceAllBots` : ne whisper plus que les bots confirmés en ligne (`MultiBot.IsBot` + `state`) — plus de whisper aux humains de la guilde / liste d'amis ni aux bots hors ligne.
+  * Côté serveur (mod-multibot-bridge) : token bucket par joueur sur les requêtes bridge (`MultiBotBridge.RequestsPerSecond` / `.RequestBurst`, drop silencieux au-delà) + garde nil sur `GetValue<Item*>("item for spell")` dans le ciblage de craft. Nécessite un rebuild serveur.
 
 ### Inventory / Inspect / Outfits
 

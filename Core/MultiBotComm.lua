@@ -222,6 +222,14 @@ local function rawSend(item)
     SendAddonMessage(Comm.prefix, item.message, item.channel)
   end
 
+  -- Re-stamp the tracked request at actual transmission time: the send queue can hold a
+  -- burst for several seconds, and the watchdog (SweepStaleRequests) must measure the wait
+  -- for the REPLY, not time spent queued locally — otherwise a queued request could expire
+  -- before it was ever sent and its reply would be rejected as stale.
+  if item.pending and type(item.pending) == "table" then
+    item.pending.startedAt = safeNow()
+  end
+
   if MultiBot.bridge then
     MultiBot.bridge.lastSendAt = safeNow()
   end
@@ -260,7 +268,9 @@ local function scheduleFlush()
   end)
 end
 
-function Comm.Send(opcode, payload)
+-- `pending` (optional) is the watchdog-tracked request entry for this message; rawSend
+-- re-stamps its startedAt when the message actually leaves the send queue.
+function Comm.Send(opcode, payload, pending)
   ensureBridgeState()
   local playerName = getPlayerName()
   if not playerName or type(SendAddonMessage) ~= "function" then
@@ -280,6 +290,7 @@ function Comm.Send(opcode, payload)
     target = playerName,
     opcode = opcode,
     payload = payload,
+    pending = type(pending) == "table" and pending or nil,
   }
   drainSendQueue()
   scheduleFlush()
@@ -361,7 +372,7 @@ function Comm.RequestTalentSpecList(name)
     startedAt = safeNow(),
   }
 
-  if not Comm.Send("GET", "TALENT_SPEC_LIST~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "TALENT_SPEC_LIST~" .. name .. "~" .. token, state.talentSpecActive) then
     state.talentSpecActive = nil
     return false
   end
@@ -486,7 +497,7 @@ function Comm.RequestOutfits(name)
     lines = {},
   }
 
-  if not Comm.Send("GET", "OUTFITS~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "OUTFITS~" .. name .. "~" .. token, state.outfitActive) then
     state.outfitActive = nil
     return false
   end
@@ -512,7 +523,7 @@ function Comm.RunOutfitCommand(name, commandSuffix, persist)
   }
 
   local persistToken = persist and "1" or "0"
-  if not Comm.Send("RUN", "OUTFIT~" .. name .. "~" .. token .. "~" .. urlEncodeField(commandSuffix) .. "~" .. persistToken) then
+  if not Comm.Send("RUN", "OUTFIT~" .. name .. "~" .. token .. "~" .. urlEncodeField(commandSuffix) .. "~" .. persistToken, state.outfitCommands[token]) then
     state.outfitCommands[token] = nil
     return false
   end
@@ -539,7 +550,7 @@ function Comm.RequestTrainer(name)
     spells = {},
   }
 
-  if not Comm.Send("GET", "TRAINER~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "TRAINER~" .. name .. "~" .. token, state.trainerActive) then
     state.trainerActive = nil
     return false
   end
@@ -580,7 +591,7 @@ function Comm.RunTrainerLearn(name, trainerEntry, spellId)
     startedAt = safeNow(),
   }
 
-  if not Comm.Send("RUN", "TRAINER_LEARN~" .. name .. "~" .. token .. "~" .. trainerEntry .. "~" .. spellToken) then
+  if not Comm.Send("RUN", "TRAINER_LEARN~" .. name .. "~" .. token .. "~" .. trainerEntry .. "~" .. spellToken, state.trainerCommands[token]) then
     state.trainerCommands[token] = nil
     return false
   end
@@ -608,7 +619,7 @@ function Comm.RequestGlyphs(name)
     startedAt = safeNow(),
   }
 
-  if not Comm.Send("GET", "GLYPHS~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "GLYPHS~" .. name .. "~" .. token, state.glyphActive) then
     state.glyphActive = nil
     return false
   end
@@ -638,7 +649,7 @@ function Comm.RequestQuests(mode, name)
     startedAt = safeNow(),
   }
 
-  if not Comm.Send("GET", "QUESTS~" .. mode .. "~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "QUESTS~" .. mode .. "~" .. name .. "~" .. token, state.questActive[token]) then
     state.questActive[token] = nil
     return false
   end
@@ -662,7 +673,7 @@ function Comm.RequestGameObjects(name)
     startedAt = safeNow(),
   }
 
-  if not Comm.Send("GET", "GAMEOBJECTS~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "GAMEOBJECTS~" .. name .. "~" .. token, state.gameObjectActive[token]) then
     state.gameObjectActive[token] = nil
     return false
   end
@@ -697,7 +708,7 @@ function Comm.RequestInventory(name)
     startedAt = safeNow(),
   }
 
-  if not Comm.Send("GET", "INVENTORY~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "INVENTORY~" .. name .. "~" .. token, state.inventoryActive) then
     state.inventoryActive = nil
     return false
   end
@@ -723,7 +734,7 @@ function Comm.RequestBank(name)
     error = nil,
   }
 
-  if not Comm.Send("GET", "BANK~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "BANK~" .. name .. "~" .. token, state.bankActive) then
     state.bankActive = nil
     return false
   end
@@ -749,7 +760,7 @@ function Comm.RequestGuildBank(name)
     error = nil,
   }
 
-  if not Comm.Send("GET", "GBANK~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "GBANK~" .. name .. "~" .. token, state.guildBankActive) then
     state.guildBankActive = nil
     return false
   end
@@ -773,7 +784,7 @@ function Comm.RequestSpellbook(name)
     startedAt = safeNow(),
   }
 
-  if not Comm.Send("GET", "SPELLBOOK~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "SPELLBOOK~" .. name .. "~" .. token, state.spellbookActive) then
     state.spellbookActive = nil
     return false
   end
@@ -798,7 +809,7 @@ function Comm.RequestBotSkills(name)
     items = {},
   }
 
-  if not Comm.Send("GET", "BOT_SKILLS~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "BOT_SKILLS~" .. name .. "~" .. token, state.botSkillActive) then
     state.botSkillActive = nil
     return false
   end
@@ -823,7 +834,7 @@ function Comm.RequestBotReputations(name)
     items = {},
   }
 
-  if not Comm.Send("GET", "BOT_REPUTATIONS~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "BOT_REPUTATIONS~" .. name .. "~" .. token, state.botReputationActive) then
     state.botReputationActive = nil
     return false
   end
@@ -849,7 +860,7 @@ function Comm.RequestBotEmblems(name)
     money = nil,
   }
 
-  if not Comm.Send("GET", "BOT_EMBLEMS~" .. name .. "~" .. token) then
+  if not Comm.Send("GET", "BOT_EMBLEMS~" .. name .. "~" .. token, state.botEmblemActive) then
     state.botEmblemActive = nil
     return false
   end
@@ -876,7 +887,7 @@ function Comm.RequestProfessionRecipes(name, skillId)
     recipes = {},
   }
 
-  if not Comm.Send("GET", "PROFESSION_RECIPES~" .. name .. "~" .. skillId .. "~" .. token) then
+  if not Comm.Send("GET", "PROFESSION_RECIPES~" .. name .. "~" .. skillId .. "~" .. token, state.professionRecipeActive) then
     state.professionRecipeActive = nil
     return false
   end
@@ -905,7 +916,7 @@ function Comm.RunProfessionRecipeCraft(name, skillId, spellId, itemId)
     startedAt = safeNow(),
   }
 
-  if not Comm.Send("RUN", "CRAFT_RECIPE~" .. name .. "~" .. token .. "~" .. skillId .. "~" .. spellId .. "~" .. itemId) then
+  if not Comm.Send("RUN", "CRAFT_RECIPE~" .. name .. "~" .. token .. "~" .. skillId .. "~" .. spellId .. "~" .. itemId, state.professionRecipeCrafts[token]) then
     state.professionRecipeCrafts[token] = nil
     return false
   end
@@ -934,7 +945,7 @@ function Comm.RunInventoryItemAction(name, action, itemId, count)
     startedAt = safeNow(),
   }
 
-  if not Comm.Send("RUN", "ITEM_ACTION~" .. name .. "~" .. token .. "~" .. action .. "~" .. itemId .. "~" .. count) then
+  if not Comm.Send("RUN", "ITEM_ACTION~" .. name .. "~" .. token .. "~" .. action .. "~" .. itemId .. "~" .. count, state.inventoryItemActions[token]) then
     state.inventoryItemActions[token] = nil
     return false
   end
@@ -1021,6 +1032,83 @@ function Comm.StartRequestWatchdog()
   end
 
   MultiBot.TimerAfter(2.5, tick)
+end
+
+-- Human-readable labels for the watchdog request kinds (slot / multi-table names).
+local REQUEST_TIMEOUT_KIND_LABELS = {
+  talentSpecActive = "talent specs",
+  inventoryActive = "inventory",
+  bankActive = "bank",
+  guildBankActive = "guild bank",
+  spellbookActive = "spellbook",
+  botSkillActive = "skills",
+  botReputationActive = "reputations",
+  botEmblemActive = "emblems",
+  professionRecipeActive = "profession recipes",
+  outfitActive = "outfits",
+  trainerActive = "trainer",
+  glyphActive = "glyphs",
+  questActive = "quests",
+  gameObjectActive = "game objects",
+  inventoryItemActions = "item action",
+  professionRecipeCrafts = "recipe craft",
+  outfitCommands = "outfit command",
+  trainerCommands = "trainer learn",
+}
+
+local requestTimeoutLastNotifyAt = {}
+
+-- If the Bank/Guild-Bank window is open on the request that just expired, replace its
+-- "Loading..." status so the user is not left staring at a stuck panel.
+local function notifyBankFrameTimeout(kind, entry)
+  local frame = MultiBot.bankFrame
+  if not (frame and frame.status and frame.status.SetText) then
+    return
+  end
+  if frame.IsShown and not frame:IsShown() then
+    return
+  end
+
+  local mode = (kind == "guildBankActive") and "gbank" or "bank"
+  if frame.mode ~= mode then
+    return
+  end
+
+  local botName = entry and entry.botName
+  if botName and frame.botName and string.lower(tostring(frame.botName)) ~= string.lower(tostring(botName)) then
+    return
+  end
+
+  frame.status:SetText(L("bridge.request.timeout.panel", "Request timed out (no bridge reply)."))
+end
+
+-- Called by expireRequestEntry when a tracked GET~/RUN~ request never got its reply
+-- (server restart, dropped addon message). Without this the expiry was silent and any
+-- panel waiting on the reply stayed on "Loading..." with no explanation.
+function MultiBot.OnBridgeRequestTimeout(kind, entry)
+  if kind == "bankActive" or kind == "guildBankActive" then
+    notifyBankFrameTimeout(kind, entry)
+  end
+
+  -- One chat line per kind per 10s: a dead server expires several requests at once and
+  -- the watchdog keeps sweeping, so unthrottled output would spam the chat frame.
+  local now = safeNow()
+  local lastAt = requestTimeoutLastNotifyAt[kind]
+  if lastAt and (now - lastAt) < 10 then
+    return
+  end
+  requestTimeoutLastNotifyAt[kind] = now
+
+  local label = REQUEST_TIMEOUT_KIND_LABELS[kind] or tostring(kind or "request")
+  local botName = entry and entry.botName
+  local message
+  if type(botName) == "string" and botName ~= "" then
+    message = string.format(L("bridge.request.timeout.bot", "MultiBot: %s request for %s timed out (no bridge reply)."), label, botName)
+  else
+    message = string.format(L("bridge.request.timeout", "MultiBot: %s request timed out (no bridge reply)."), label)
+  end
+
+  systemMessage(message)
 end
 
 function Comm.MarkDisconnected(reason)

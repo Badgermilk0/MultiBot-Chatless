@@ -39,6 +39,39 @@ function AceUI.GetLocalizedQuestName(questID)
     return text
 end
 
+local itemTooltipName = "MB_LocalizeItemTooltip"
+local safeItemNameCache = {}
+
+-- Crash-safe item-name lookup: GetItemInfo(numericId) can hard-crash this modded 3.3.5a
+-- client while resolving uncached ids (see buildInventoryItemRecord in MultiBotInventoryItem),
+-- so resolve the name through a hidden tooltip hyperlink instead — the same pattern as
+-- GetLocalizedQuestName above. Returns nil on a cache miss so callers keep their fallback text.
+function AceUI.GetSafeItemName(itemId)
+    itemId = tonumber(itemId or 0) or 0
+    if itemId <= 0 then
+        return nil
+    end
+
+    local cached = safeItemNameCache[itemId]
+    if cached then
+        return cached
+    end
+
+    local tooltip = ensureHiddenTooltip(itemTooltipName, UIParent)
+    tooltip:ClearLines()
+    tooltip:SetHyperlink("item:" .. itemId .. ":0:0:0:0:0:0:0")
+
+    local textObject = _G[itemTooltipName .. "TextLeft1"]
+    local text = textObject and textObject:GetText()
+
+    if type(text) ~= "string" or text == "" or text == RETRIEVING_ITEM_INFO then
+        return nil
+    end
+
+    safeItemNameCache[itemId] = text
+    return text
+end
+
 function AceUI.GetAceGUI()
     if type(LibStub) ~= "table" then
         return nil
@@ -192,6 +225,7 @@ function AceUI.CreatePopupHost(title, width, height, missingDepMessage, persiste
 end
 
 MultiBot.GetLocalizedQuestName = MultiBot.GetLocalizedQuestName or AceUI.GetLocalizedQuestName
+MultiBot.GetSafeItemName = MultiBot.GetSafeItemName or AceUI.GetSafeItemName
 MultiBot.GetAceGUI = MultiBot.GetAceGUI or AceUI.GetAceGUI
 MultiBot.ResolveAceGUI = MultiBot.ResolveAceGUI or AceUI.ResolveAceGUI
 MultiBot.SetAceWindowCloseToHide = MultiBot.SetAceWindowCloseToHide or AceUI.SetWindowCloseToHide

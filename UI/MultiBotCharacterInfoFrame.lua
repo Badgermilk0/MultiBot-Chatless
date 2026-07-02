@@ -340,13 +340,15 @@ end
 local function getEmblemInfo(itemId)
     itemId = tonumber(itemId or 0) or 0
     local name, icon
-    if itemId > 0 and GetItemInfo then
-        local itemInfo = { GetItemInfo(itemId) }
-        name = itemInfo[1]
-        icon = itemInfo[10]
+    -- No GetItemInfo(numericId) here: resolving an uncached id can hard-crash this modded
+    -- 3.3.5a client (see buildInventoryItemRecord in MultiBotInventoryItem). The hidden-tooltip
+    -- resolver plus the EMBLEM_NAME_KEYS locale fallback below cover the name; GetItemIcon is
+    -- the crash-safe icon path.
+    if itemId > 0 and MultiBot.GetSafeItemName then
+        name = MultiBot.GetSafeItemName(itemId)
     end
 
-    if itemId > 0 and not icon and GetItemIcon then
+    if itemId > 0 and GetItemIcon then
         icon = GetItemIcon(itemId)
     end
 
@@ -403,7 +405,9 @@ local function getItemName(itemId)
         return ""
     end
 
-    local name = GetItemInfo(itemId)
+    -- GetItemInfo(numericId) is the known client hard-crash class; resolve through the
+    -- crash-safe hidden-tooltip helper instead (nil on cache miss -> numeric fallback).
+    local name = MultiBot.GetSafeItemName and MultiBot.GetSafeItemName(itemId)
     return name or ("item:" .. itemId)
 end
 

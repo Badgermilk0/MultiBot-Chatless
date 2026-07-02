@@ -1256,10 +1256,14 @@ function MultiBot.InitializeTalentFrameModule()
                     if cachedItem then
                         itemName, itemTexture = cachedItem[1], cachedItem[2]
                     else
-                        local itemInfo = { GetItemInfo(itemId) }
-                        itemName = itemInfo[1]
-                        itemTexture = itemInfo[10]
-                        if not itemTexture and type(GetItemIcon) == "function" then
+                        -- No GetItemInfo(numericId) here — the known client hard-crash class
+                        -- (see buildInventoryItemRecord in MultiBotInventoryItem). Icon via the
+                        -- crash-safe GetItemIcon, name via the hidden-tooltip helper; a nil name
+                        -- falls back to the glyph's spell name below.
+                        if MultiBot.GetSafeItemName then
+                            itemName = MultiBot.GetSafeItemName(itemId)
+                        end
+                        if type(GetItemIcon) == "function" then
                             itemTexture = GetItemIcon(itemId)
                         end
                         if itemTexture then
@@ -2494,10 +2498,9 @@ function MultiBot.InitializeTalentFrameModule()
             rune:Show()
         end
 
-        local tex = select(10, GetItemInfo(itemID))
-        if not tex and type(GetItemIcon) == "function" then
-            tex = GetItemIcon(itemID)
-        end
+        -- No GetItemInfo(numericId) here — the known client hard-crash class (see
+        -- buildInventoryItemRecord in MultiBotInventoryItem); GetItemIcon is the safe icon path.
+        local tex = type(GetItemIcon) == "function" and GetItemIcon(itemID) or nil
         tex = tex or GetSpellTexture(itemID)
         local isFallback = tex == nil
         tex = tex or "Interface\\AddOns\\MultiBot\\Textures\\UI-GlyphFrame-Glow.blp"

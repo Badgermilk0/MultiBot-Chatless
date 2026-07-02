@@ -557,9 +557,12 @@ end
 
 function MultiBot.OnBridgeInventoryItemActionResult(botName, action, itemId, result, reason, moved)
     local actionLabel = getInventoryItemActionLabel(action)
-    local itemName = tostring(itemId or "")
-    if GetItemInfo then
-        itemName = GetItemInfo(tonumber(itemId or 0) or 0) or itemName
+    -- GetItemInfo(numericId) is the known client hard-crash class (see the warning in
+    -- buildInventoryItemRecord above); resolve the toast name through the crash-safe
+    -- hidden-tooltip helper and keep the numeric id as fallback.
+    local itemName = "item:" .. tostring(itemId or "")
+    if MultiBot.GetSafeItemName then
+        itemName = MultiBot.GetSafeItemName(itemId) or itemName
     end
 
     if result == "OK" then

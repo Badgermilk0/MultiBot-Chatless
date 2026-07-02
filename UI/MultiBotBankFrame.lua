@@ -152,10 +152,13 @@ local function parseBankItemLine(line)
         return nil
     end
 
-    local name, link, _, _, _, _, _, _, _, icon = GetItemInfo(itemId)
-    if not icon and GetItemIcon then
-        icon = GetItemIcon(itemId)
-    end
+    -- Never call GetItemInfo(itemId) here: on this modded 3.3.5a client resolving an uncached
+    -- numeric id can hard-crash the game (see buildInventoryItemRecord in MultiBotInventoryItem).
+    -- The bridge line already carries the full item link and name; the icon comes from the
+    -- crash-safe GetItemIcon.
+    local link = string.match(line, "(|c%x+|Hitem:.-|h%[.-%]|h|r)")
+    local name = string.match(line, "%[(.-)%]")
+    local icon = GetItemIcon and GetItemIcon(itemId) or nil
 
     local count = tonumber(string.match(line, "rx(%d+)") or string.match(line, "x(%d+)") or "1") or 1
     if count < 1 then
