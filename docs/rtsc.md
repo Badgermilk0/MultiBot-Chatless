@@ -1,0 +1,142 @@
+# RTSC — RTS control
+
+RTSC lets you command playerbots like an RTS: mark a spot on the ground and send bots there.
+It spans three layers — `mod-playerbots` (the behaviour), `mod-multibot-bridge` (the transport),
+and this addon (the bar). This document records how the three fit together, because the model is
+not obvious from any one of them.
+
+## The one thing to understand
+
+**No command carries coordinates.** The only way a world position reaches a bot is a real
+ground-targeted cast of **spell 30758** by the master. Playerbots renames that spell to `aedm`
+(`data/sql/world/updates/2025_08_27_03.sql`), hooks the master's `CMSG_CAST_SPELL`
+(`Playerbots.cpp`, `OnPacketReceived`), and reads the destination in
+`SeeSpellAction::Execute`, storing it as the AI value `see spell location`.
+
+Every `rtsc …` command therefore does one of three things:
+
+1. **arms** what the *next* ground cast will do (`move`, `save <name>`, `save selected <name>`),
+2. **replays** an already stored point (`go <name>`, `last`),
+3. **manages** selection or storage (`select`, `cancel`, `toggle`, `show`, `unsave`, `reset`,
+   `save here`).
+
+This is why every casting button in the bar is a `SecureActionButtonTemplate` carrying
+`/cast <aedm>`: the addon cannot obtain a terrain coordinate, so the *client* must place it.
+The macro text is built from `GetSpellInfo(30758)` rather than the literal string `aedm`, so a
+client whose `Spell.dbc` names 30758 differently still works. If `GetSpellInfo(30758)` returns
+nil the client is missing the spell entirely and RTSC cannot work at all.
+
+## Marquee select
+
+With **nothing armed**, a ground cast is a rubber-band selection (`SeeSpellAction.cpp`):
+
+- bots within 10 yards of the click become **selected**,
+- bots outside become **deselected**,
+- bots that were *already* selected **move** to the click, with their formation offset applied.
+
+So the ordinary loop is: click a role button (which selects and opens the reticle) → click the
+ground → they go. No selection command is needed for the proximity case at all.
+
+## The command surface (all 13 sub-forms)
+
+| Sub-command | Effect |
+|---|---|
+| *(bare)* | Trains the master's `aedm` spell. Sent by the addon as `enable`. |
+| `select` / `cancel` / `toggle` | Selection flag, with a spell visual on the master's client. |
+| `reset` | **Destructive**: wipes every saved location on every bot *and* untrains the spell. |
+| `move` | Arms persistent move mode — every later cast moves the bot, until `cancel`/`reset`. |
+| `save <name>` | Arms a save; the point is captured on the next cast. |
+| `save selected <name>` | Same, but only bots that are currently selected store it. |
+| `save here <name>` | Stores each bot's **own current position** immediately — a formation snapshot. |
+| `unsave <name>` | Drops one saved location. |
+| `go <name>` | Moves to a saved location (exact point, no formation offset). |
+| `last` | Moves to the most recent cast position, **with** formation offset. |
+| `show` / `show <name>` | Lists saved names by whisper / summons a 2-second marker at one. |
+
+Playerbots matches these with `find(...) != npos` but slices arguments with fixed `substr()`
+offsets, so a token that is not an exact prefix yields a garbage name. The bridge rebuilds every
+command from validated tokens (`NormalizeRTSCCommand`) to keep that unreachable.
+
+The `rtsc` **strategy is a no-op** — `RTSCStrategy::InitTriggers` is empty and the gate in
+`SeeSpellAction.cpp` is commented out. Nothing needs enabling; the root button's
+`co +rtsc,+guard,?` is kept only in case that gate is ever restored.
+
+Security is effectively **master-only**, and `RTSCAction` requires `GetMaster()` — an ungrouped
+bot ignores RTSC entirely.
+
+## Transport
+
+Bridge-first, exactly like the rest of the addon. `UI/MultiBotRTSCUI.lua` routes everything
+through one local `sendRtsc(sub, tag)`:
+
+- **Bridge:** `Comm.RunRtscCommand("ALL", "", "<tag> <sub>")` → `RUN~RTSC` → `RTSC_ACK`.
+- **Fallback:** `MultiBot.ActionToGroup("<tag> rtsc <sub>")` (party/raid chat), used only when
+  the bridge is down. `here` and `persist` have no chat equivalent and report that.
+
+`tag` is a playerbots chat filter (`@tank`, `@group1-3`, …). These are applied inside
+`PlayerbotAI::HandleCommand`, which the bridge's silent-whisper path goes through — so the same
+filters work over the bridge as over party chat.
+
+Two sub-commands exist only on the bridge:
+
+- **`persist`** — flushes the bot's context to the playerbots DB. Necessary because an armed
+  `save` lands inside `SeeSpellAction` (invisible to the bridge) and context writes are memory
+  only until `PlayerbotRepository::Save` runs. Without it, saved spots die on bot relog.
+- **`here`** — seeds `see spell location` with the requester's position, then replays it via
+  `rtsc last`. "Regroup on me, in formation", with no cast. It cannot be scoped with an `@tag`,
+  because the native write happens before playerbots' chat filter runs.
+
+## State
+
+`GET~RTSC` streams `RTSC_BEGIN` / `RTSC_ITEM~<bot>~<token>~<selected>~<armed>~<names>` /
+`RTSC_END`. `Core/MultiBotComm.lua` folds it into:
+
+```lua
+MultiBot.bridge.rtsc = {
+    bots     = { [name] = { selected = bool, armed = "save 3", slots = { ["3"] = true } } },
+    slots    = { ["3"] = true },  -- aggregate: any bot has this slot
+    selected = 4,                 -- count, shown in the root button's tooltip
+    stamp    = <time>,            -- set only once a stream has completed
+}
+```
+
+`stamp` is what makes a connected-but-never-queried bridge fall back to the addon's own optimistic
+bookkeeping instead of blanking the bar.
+
+The slot faces render from this, not from click bookkeeping: clicking an empty slot only *arms* a
+save, and the slot fills only after `UNIT_SPELLCAST_SUCCEEDED` for the marker spell is followed by
+a fresh `GET~RTSC`. Escaping the reticle therefore leaves the slot empty, as it should.
+
+Selection is reported as a **count in the root button's tooltip**. It is deliberately not painted
+onto Units roster buttons — a unit button's `state` is its online/offline flag and must not be
+repurposed.
+
+## The bar
+
+Left of centre: nine location slots (`MACRO<i>` when empty, `RTSC<i>` when filled, same position).
+Right of centre: group/role selector buttons, `@all`, Browse, then Move / Last / Here.
+
+| Control | Action |
+|---|---|
+| Root, left | Clear the pending selector + open the reticle |
+| Root, right | `enable` (train the spell) + `co/nc +rtsc,+guard` |
+| Root, **shift+right** | `reset` — wipes all saved locations, clears all nine slots |
+| Empty slot, left | Arm `save <i>` (or `save selected <i>` when a selector is pending) + reticle |
+| Empty slot, **shift+left** | `save here <i>` — formation snapshot, no cast |
+| Filled slot, left | `go <i>` |
+| Filled slot, **ctrl+left** | `show <i>` — summon a 2-second marker there |
+| Filled slot, right | `unsave <i>` |
+| Role/group, left | `select` + reticle |
+| Role/group, right | `select` only, and accumulate the tag into the selector |
+| `@all`, left / right | `select` for everyone (left additionally opens the reticle) |
+| Browse, left / right | Swap role↔group row / `cancel` (deselect everything) |
+| Move, left / right | Arm `move` + reticle / `cancel` |
+| Last, left / right | `last` / re-read state from the bridge |
+| Here, left | `here` (bridge only; hidden when the bridge is down) |
+
+Left and right differ on the secure buttons even when they send the same command: only `type1` is
+set, so **only left-click casts**. Modified clicks set an empty `shift-type1` / `ctrl-type1` so
+they do not open a reticle the action does not want.
+
+**Closing the bar sends `cancel`, never `reset`.** The old behaviour wiped every saved location
+and untrained the master's spell every time the panel was closed.

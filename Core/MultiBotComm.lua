@@ -152,6 +152,11 @@ local function ensureBridgeState()
   state.combatSeq = state.combatSeq or 0
   state.positionSeq = state.positionSeq or 0
   state.lootSeq = state.lootSeq or 0
+  state.rtscSeq = state.rtscSeq or 0
+  state.rtscActive = state.rtscActive or nil
+  -- RTSC server state: per-bot selection / armed action / saved slot names, plus the aggregate
+  -- the RTSC bar renders from (a slot is "filled" as soon as any bot stored it).
+  state.rtsc = state.rtsc or { bots = {}, slots = {}, selected = 0 }
   return state
 end
 
@@ -403,6 +408,147 @@ function Comm.RunRtiCommand(scope, target, command)
   local token = tostring(math.floor(safeNow() * 1000)) .. "-" .. tostring(state.rtiSeq)
 
   return Comm.Send("RUN", "RTI~" .. scope .. "~" .. urlEncodeField(target) .. "~" .. token .. "~" .. urlEncodeField(command))
+end
+
+-- RTSC actions. `command` is the full playerbots line minus the leading verb, optionally carrying
+-- a chat-filter selector ("@tank rtsc select") - the bridge validates it and forwards it through
+-- PlayerbotAI::HandleCommand, which applies the same @-filters party chat would.
+function Comm.RunRtscCommand(scope, target, command)
+  local state = ensureBridgeState()
+
+  if not state.connected then
+    return false
+  end
+
+  command = trim(command or "")
+  if command == "" then
+    return false
+  end
+
+  scope = string.upper(trim(scope or "ALL"))
+  target = trim(target or "")
+
+  if scope ~= "ALL" and scope ~= "GROUP" and scope ~= "BOT" then
+    return false
+  end
+
+  state.rtscSeq = (tonumber(state.rtscSeq) or 0) + 1
+  local token = tostring(math.floor(safeNow() * 1000)) .. "-rtsc-" .. tostring(state.rtscSeq)
+
+  return Comm.Send("RUN", "RTSC~" .. scope .. "~" .. urlEncodeField(target) .. "~" .. token .. "~" .. urlEncodeField(command))
+end
+
+-- Chatless replacement for playerbots' `rtsc show`, which answers with a whisper. An empty
+-- botName asks for every visible bot.
+function Comm.RequestRtscState(botName)
+  local state = ensureBridgeState()
+
+  if not state.connected then
+    return false
+  end
+
+  botName = trim(botName or "")
+
+  state.rtscSeq = (tonumber(state.rtscSeq) or 0) + 1
+  local token = tostring(math.floor(safeNow() * 1000)) .. "-rtscget-" .. tostring(state.rtscSeq)
+  state.rtscActive = {
+    botName = botName,
+    token = token,
+    startedAt = safeNow(),
+    bots = {},
+  }
+
+  if not Comm.Send("GET", "RTSC~" .. botName .. "~" .. token, state.rtscActive) then
+    state.rtscActive = nil
+    return false
+  end
+
+  return true
+end
+
+function Comm.ApplyRtscBeginPayload(payload)
+  local state = ensureBridgeState()
+  local token = trim(payload or "")
+
+  if not state.rtscActive or state.rtscActive.token ~= token then
+    return false
+  end
+
+  state.rtscActive.bots = {}
+
+  debugPrint("ADDON:RX", "RTSC_BEGIN", token)
+  return true
+end
+
+function Comm.ApplyRtscItemPayload(payload)
+  local state = ensureBridgeState()
+
+  local botName, rest = splitOnce(payload or "", "~")
+  local token, rest2 = splitOnce(rest or "", "~")
+  local selected, rest3 = splitOnce(rest2 or "", "~")
+  local armed, names = splitOnce(rest3 or "", "~")
+
+  botName = trim(urlDecodeField(botName))
+  token = trim(token)
+
+  if botName == "" or not state.rtscActive or state.rtscActive.token ~= token then
+    return false
+  end
+
+  local slots = {}
+  local nameList = trim(urlDecodeField(names or ""))
+  if nameList ~= "" then
+    for name in string.gmatch(nameList, "([^,]+)") do
+      name = trim(name)
+      if name ~= "" then
+        slots[name] = true
+      end
+    end
+  end
+
+  state.rtscActive.bots[botName] = {
+    selected = trim(selected or "") == "1",
+    armed = trim(urlDecodeField(armed or "")),
+    slots = slots,
+  }
+
+  debugPrint("ADDON:RX", "RTSC_ITEM", botName, selected, nameList)
+  return true
+end
+
+function Comm.ApplyRtscEndPayload(payload)
+  local state = ensureBridgeState()
+  local token = trim(payload or "")
+
+  if not state.rtscActive or state.rtscActive.token ~= token then
+    return false
+  end
+
+  local bots = state.rtscActive.bots or {}
+  -- `stamp` marks the cache as "answered at least once"; the UI falls back to its own optimistic
+  -- slot bookkeeping until then, so a connected-but-never-queried bridge cannot blank the bar.
+  local aggregate = { bots = bots, slots = {}, selected = 0, stamp = safeNow() }
+
+  for _, entry in pairs(bots) do
+    if entry.selected then
+      aggregate.selected = aggregate.selected + 1
+    end
+
+    for slot in pairs(entry.slots) do
+      aggregate.slots[slot] = true
+    end
+  end
+
+  state.rtsc = aggregate
+  state.rtscActive = nil
+
+  debugPrint("ADDON:RX", "RTSC_END", token, aggregate.selected)
+
+  if type(MultiBot.OnBridgeRtscState) == "function" then
+    MultiBot.OnBridgeRtscState(aggregate)
+  end
+
+  return true
 end
 
 function Comm.RunCombatCommand(scope, target, command)
@@ -962,6 +1108,7 @@ local SINGLE_SHOT_REQUEST_SLOTS = {
   "talentSpecActive", "inventoryActive", "bankActive", "guildBankActive",
   "spellbookActive", "botSkillActive", "botReputationActive", "botEmblemActive",
   "professionRecipeActive", "outfitActive", "trainerActive", "glyphActive",
+  "rtscActive",
 }
 
 local MULTI_REQUEST_TABLES = {
@@ -1048,6 +1195,7 @@ local REQUEST_TIMEOUT_KIND_LABELS = {
   outfitActive = "outfits",
   trainerActive = "trainer",
   glyphActive = "glyphs",
+  rtscActive = "RTSC state",
   questActive = "quests",
   gameObjectActive = "game objects",
   inventoryItemActions = "item action",
@@ -3437,6 +3585,34 @@ function Comm.HandleAddonMessage(prefix, message, distribution, sender)
     state.connected = true
     state.lastError = nil
     debugPrint("ADDON:RX", "RTI_ACK", payload or "")
+    return true
+  end
+
+  if opcode == "RTSC_ACK" then
+    state.connected = true
+    state.lastError = nil
+    debugPrint("ADDON:RX", "RTSC_ACK", payload or "")
+    return true
+  end
+
+  if opcode == "RTSC_BEGIN" then
+    state.connected = true
+    state.lastError = nil
+    Comm.ApplyRtscBeginPayload(payload)
+    return true
+  end
+
+  if opcode == "RTSC_ITEM" then
+    state.connected = true
+    state.lastError = nil
+    Comm.ApplyRtscItemPayload(payload)
+    return true
+  end
+
+  if opcode == "RTSC_END" then
+    state.connected = true
+    state.lastError = nil
+    Comm.ApplyRtscEndPayload(payload)
     return true
   end
 

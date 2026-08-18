@@ -267,13 +267,25 @@ local function toggleRTSC(button)
     if MultiBot.OnOffSwitch(button) then
         MultiBot.frames["MultiBar"].setPoint(MultiBot.frames["MultiBar"].x, MultiBot.frames["MultiBar"].y + 34)
         MultiBot.frames["MultiBar"].frames["RTSC"]:Show()
-        MultiBot.ActionToGroup("rtsc")
+        -- Trains the master's marker spell and pulls the bots' real RTSC state (see
+        -- UI/MultiBotRTSCUI.lua); falls back to the old chat command if that file is missing.
+        if MultiBot.RTSCOnPanelOpen then
+            MultiBot.RTSCOnPanelOpen()
+        else
+            MultiBot.ActionToGroup("rtsc")
+        end
         return
     end
 
     MultiBot.frames["MultiBar"].setPoint(MultiBot.frames["MultiBar"].x, MultiBot.frames["MultiBar"].y - 34)
     MultiBot.frames["MultiBar"].frames["RTSC"]:Hide()
-    MultiBot.ActionToGroup("rtsc reset")
+    -- Deliberately NOT "rtsc reset": that wipes every saved location on every bot and untrains the
+    -- master's marker spell. Closing the panel only drops the selection.
+    if MultiBot.RTSCOnPanelClose then
+        MultiBot.RTSCOnPanelClose()
+    else
+        MultiBot.ActionToGroup("rtsc cancel")
+    end
 end
 
 local function toggleRaidus(button)

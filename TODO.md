@@ -116,6 +116,15 @@
   * frame harmonisée avec les frames de quêtes ;
   * consultation des sorts apprenables depuis le trainer sélectionné ;
   * apprentissage d'un sort ou de tous les sorts via bridge.
+* RTSC bridge-first (`RUN~RTSC` / `GET~RTSC`, repli chat uniquement bridge coupé) — voir `docs/rtsc.md` :
+  * les 9 emplacements de position sont rendus depuis l'état serveur réel, plus depuis un pari optimiste au clic (l'emplacement ne se remplit qu'après le cast `aedm` réellement détecté) ;
+  * persistance des positions enregistrées après le cast, via le flush `persist` du bridge (elles survivaient rarement à une reconnexion du bot) ;
+  * fermer la barre envoie `cancel` et non plus `rtsc reset`, qui effaçait toutes les positions enregistrées et désapprenait le sort `aedm` du maître ;
+  * `reset` déplacé sur Shift+clic droit du bouton racine, avec remise à zéro des 9 emplacements ;
+  * nouvelles commandes exposées : mode `move` (bascule), `last`, `save here` (instantané de formation, Shift+clic gauche), `show <n>` (Ctrl+clic gauche), `save selected <n>` quand un sélecteur est actif ;
+  * `here` (bridge uniquement) : regroupement sur la position exacte du joueur, en formation, sans cast ;
+  * macro construite depuis `GetSpellInfo(30758)` au lieu du nom serveur `aedm` en dur, et boutons grisés tant que le sort n'est pas appris ;
+  * nombre de bots sélectionnés affiché dans l'infobulle du bouton racine (l'état des boutons d'unité reste réservé au statut en ligne / hors ligne).
 * Achat vendeur bridge-first depuis les composants manquants de recette métier.
 * Profession recipes bridge-first.
 * Craft de recettes métier via bridge `RUN~CRAFT_RECIPE`.
