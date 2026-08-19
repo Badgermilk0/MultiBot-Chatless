@@ -249,6 +249,15 @@
     Comme `GetNumPartyMembers()` renvoie 0 en raid, **toutes** les commandes de groupe (stay,
     follow, attack, flee, formation, mode, tanker) échouaient silencieusement dans un raid de 5 ou
     moins. Corrigé en `> 0`, comme `isMember`/`toUnit` l'avaient déjà été.
+  * RTSC « Regroup on me » / « Last » : les bots partaient à l'opposé du joueur. Cause côté
+    **mod-playerbots** (pas l'addon) : `SeeSpellLocationValue` hérite de
+    `MemoryCalculatedValue::Set()`, qui **ignore son argument**, donc `see spell location`
+    n'était jamais écrit — ni par `SeeSpellAction`, ni par `ApplyNativeRTSCHere` du bridge.
+    La valeur restait `MAPID_INVALID / 0,0,0`, que `operator bool()` considère comme valide,
+    et `SetFormationOffset` envoyait donc les bots à la position du joueur **miroir de
+    l'origine du monde**. Corrigé par un override `Set` ciblé dans
+    `MODULES/mod-playerbots/src/Ai/Base/Value/RTSCValues.{h,cpp}` (additif, limité à RTSC) —
+    **nécessite une recompilation du worldserver**. Voir `docs/rtsc.md`.
   * RTSC : emplacements numérotés, contrôles estompés + message tant que le sort de marquage n'est
     pas appris, retour quand une commande n'atteint aucun bot (`RTSC_ACK` / `POSITION_ACK`
     exposaient déjà `executed`, l'addon le jetait), sélection en attente affichée dans l'infobulle,

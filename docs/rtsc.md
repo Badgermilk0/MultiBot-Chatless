@@ -86,6 +86,36 @@ Two sub-commands exist only on the bridge:
   `rtsc last`. "Regroup on me, in formation", with no cast. It cannot be scoped with an `@tag`,
   because the native write happens before playerbots' chat filter runs.
 
+## The `see spell location` setter bug (server-side, fixed 2026-08-19)
+
+`here` and `last` are the only two RTSC paths that read the AI value `see spell location`;
+everything else uses the position from the cast packet directly, or `RTSC saved location`.
+Both were broken, and they were broken in mod-playerbots, not here:
+
+`SeeSpellLocationValue` is a `LogCalculatedValue`, so it inherited
+`MemoryCalculatedValue<T>::Set()` — which **discards its argument**:
+
+```cpp
+void Set([[maybe_unused]] T value) override
+{
+    CalculatedValue<T>::Set(this->value);   // re-sets the member to itself
+    UpdateChange();
+}
+```
+
+So neither `SET_AI_VALUE(WorldPosition, "see spell location", …)` in `SeeSpellAction` nor the
+bridge's `ApplyNativeRTSCHere` ever wrote anything. The value stayed default-constructed —
+`MAPID_INVALID`, `0/0/0` — and `WorldPosition::operator bool()` returns **true** for it
+(`GetMapId() != 0`), so `rtsc last`'s `if (spellPosition)` guard let it through.
+`SetFormationOffset` then computed `(0,0,0) - masterPos + formationSlot`, i.e. the master's
+position mirrored through the world origin: the bots ran thousands of yards the wrong way.
+That is the "Regroup on me sends them somewhere else" symptom.
+
+**Fix:** a narrow `Set` override on `SeeSpellLocationValue`
+(`mod-playerbots/src/Ai/Base/Value/RTSCValues.{h,cpp}`) — additive, RTSC-only, and it repairs
+`Last` at the same time. **Needs a worldserver rebuild.** The addon needed no change: it only
+ever sends `here`.
+
 ## State
 
 `GET~RTSC` streams `RTSC_BEGIN` / `RTSC_ITEM~<bot>~<token>~<selected>~<armed>~<names>` /
