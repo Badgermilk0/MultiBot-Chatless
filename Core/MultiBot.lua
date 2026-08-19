@@ -1204,39 +1204,24 @@ function MultiBot.ApplyGlobalStrata()
   end
 end
 
--- Account level detection (multi-locale, no hardcoding in handler) --
+-- Account level detection (parsed out of the server's system message) --
 -- Set your GM threshold here (>= value means GM). ONLY set it once.
 MultiBot.GM_THRESHOLD = 3
 
 -- DEBUG (set to true temporarily if you want to see what gets parsed)
 MultiBot.DEBUG_GM = false
 
--- Multi-language patterns that capture the level number.
--- We anchor to "account level" but allow anything between it and the number (e.g. "is: ").
+-- Anchored on "account level", allowing anything between it and the number (e.g. "is: ").
 MultiBot._acctlvl_patterns = {
-  -- EN (covers "Your account level is: 3")
+  -- covers "Your account level is: 3"
   "[Aa]ccount%W*[Ll]evel.-(%d+)",
-  -- FR
-  "[Nn]iveau%W*de%W*compte.-(%d+)",
-  -- ES
-  "[Nn]ivel%W*de%W*cuenta.-(%d+)",
-  -- DE (Accountstufe/Kontostufe)
-  "[Aa]ccount%W*[Ss]tufe.-(%d+)",
-  "[Kk]onto%W*[Ss]tufe.-(%d+)",
-  -- RU
-  "Уровень%W*аккаунта.-(%d+)",
-  -- ZH
-  "账号%W*等级.-(%d+)",
-  "帳號%W*等級.-(%d+)",
-  -- KO
-  "계정%W*등급.-(%d+)",
 }
 
 -- Fallbacks:
 --  1) number after ':' near the end ("...: 3")
 --  2) last number in a short line (avoid collisions)
 local function _acctlvl_fallbacks(msg)
-  local n = tonumber(string.match(msg, "[:：]%s*(%d+)%s*$"))
+  local n = tonumber(string.match(msg, ":%s*(%d+)%s*$"))
   if n then return n end
   if #msg <= 60 then
     local last = nil
@@ -1306,7 +1291,7 @@ MultiBot:SetSize(1, 1)
 MultiBot:Show()
 
 -- ============================================================================
--- SANITY : reconstruire l'index 'players' à partir des boutons existants
+-- SANITY: rebuild the 'players' index from the buttons that already exist
 -- ============================================================================
 function MultiBot.RebuildPlayersIndexFromButtons()
   if not (MultiBot.frames and MultiBot.frames["MultiBar"]
@@ -2148,17 +2133,17 @@ function MultiBot.BuildClassMaps()
 
   for _, canon in ipairs(MultiBot.CLASSES_CANON) do
     local token = upper[canon]
-    -- variantes évidentes
+    -- obvious spelling variants
     add(canon, canon)             -- "DeathKnight"
     add(token, canon)             -- "DEATHKNIGHT"
     add(string.lower(canon), canon)
     add(string.lower(token), canon)
 
-    -- noms localisés (homme/femme) si dispo
+    -- client class names (male/female) when available
     add(male[token],   canon)
     add(female[token], canon)
 
-    -- alias fréquents libres
+    -- common free-form aliases
     if canon == "DeathKnight" then
       add("death knight", canon); add("dk", canon)
     elseif canon == "Warlock" then
@@ -2169,25 +2154,9 @@ function MultiBot.BuildClassMaps()
       add("sham", canon)
     end
   end
-
-  -- alias par locale
-  local loc = GetLocale and GetLocale() or "enUS"
-  MultiBot.CLASS_EXTRA_ALIASES = MultiBot.CLASS_EXTRA_ALIASES or {
-    frFR = { ["chevalier de la mort"]="DeathKnight", ["cdm"]="DeathKnight", ["prêtre"]="Priest" },
-    deDE = { ["todesritter"]="DeathKnight" },
-    esES = { ["caballero de la muerte"]="DeathKnight" },
-    ruRU = { ["рыцарь смерти"]="DeathKnight" },
-    zhCN = { ["死亡骑士"]="DeathKnight" },
-    zhTW = { ["死亡騎士"]="DeathKnight" },
-    koKR = { ["죽음의 기사"]="DeathKnight" },
-  }
-  local extra = MultiBot.CLASS_EXTRA_ALIASES[loc]
-  if extra then
-    for alias, canon in pairs(extra) do add(alias, canon) end
-  end
 end
 
--- Retourne le canon "DeathKnight"/"Mage"/... à partir d’un texte libre (toutes langues)
+-- Returns the canonical "DeathKnight"/"Mage"/... for a free-form piece of text.
 function MultiBot.NormalizeClass(text)
   if not text then return nil end
   MultiBot.BuildClassMaps()
@@ -2195,7 +2164,7 @@ function MultiBot.NormalizeClass(text)
   return MultiBot.CLASS_ALIAS[key]
 end
 
--- Texte à afficher pour une classe canon (localisé si possible)
+-- Display text for a canonical class name (uses the client's class name when available).
 function MultiBot.GetClassDisplay(canon)
   if not canon then return nil end
   local upper = {
@@ -2284,7 +2253,7 @@ function MultiBot.InitAuto(name)
   SendChatMessage(".playerbot bot init=auto " .. name, "SAY")
 end
 
--- Localization payload moved to AceLocale files.
--- Keep runtime containers initialized elsewhere; locale files hydrate values.
+-- UI strings live in Locales/MultiBotAceLocale-enUS.lua (the single, English locale).
+-- Keep runtime containers initialized elsewhere; the locale file hydrates their values.
 
 MultiBot.GM = false

@@ -77,7 +77,6 @@ local function isTradeInventoryDumpStart(message)
     end
 
     return string.find(message, "Inventory", 1, true) ~= nil
-        or string.find(message, "背包", 1, true) ~= nil
 end
 
 local function isTradeInventoryDumpEnd(message)
@@ -86,7 +85,6 @@ local function isTradeInventoryDumpEnd(message)
     end
 
     return string.find(message, "Off with you", 1, true) ~= nil
-        or string.find(message, "再见", 1, true) ~= nil
 end
 
 local function isTradeInventoryDumpBodyLine(message)
@@ -616,7 +614,6 @@ local function parseInventorySummaryLine(rawLine)
         local markerCandidates = {
             "Bag",
             MultiBot.L("info.shorts.bag", "Bag"),
-            "背包",
         }
         local seen = {}
 
@@ -652,13 +649,10 @@ local function parseInventorySummaryLine(rawLine)
 
     local gold = string.match(line, "(%d+)%s*[gG]%f[%A]")
         or string.match(string.lower(line), "(%d+)%s*gold%f[%A]")
-        or string.match(line, "(%d+)%s*金")
     local silver = string.match(line, "(%d+)%s*[sS]%f[%A]")
         or string.match(string.lower(line), "(%d+)%s*silver%f[%A]")
-        or string.match(line, "(%d+)%s*银")
     local copper = string.match(line, "(%d+)%s*[cC]%f[%A]")
         or string.match(string.lower(line), "(%d+)%s*copper%f[%A]")
-        or string.match(line, "(%d+)%s*铜")
 
     if not used and not total and not gold and not silver and not copper then
         return nil
@@ -690,7 +684,9 @@ local function updateInventorySummaryLabels(inventory)
 end
 
 local function getInventoryWindowTitle(botName)
-    local defaultTitle = MB_INVENTORY_LABEL or INVENTORY_TOOLTIP or BAGSLOT or "Inventory"
+    -- MB_INVENTORY_LABEL was never defined anywhere; INVENTORY_TOOLTIP/BAGSLOT are Blizzard
+    -- globals kept as a last resort behind the addon's own localized string.
+    local defaultTitle = MultiBot.L("inventory.title", INVENTORY_TOOLTIP or BAGSLOT or "Inventory")
     if not botName or botName == "" then
         return defaultTitle
     end

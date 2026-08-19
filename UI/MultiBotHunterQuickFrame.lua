@@ -781,11 +781,11 @@ function HunterQuick:ToggleStrip(row, stripKey)
 end
 
 function HunterQuick:ShowPrompt(formatString, targetName, title)
-    if type(ShowPrompt) ~= "function" then
+    if type(MultiBot.ShowPrompt) ~= "function" then
         return
     end
 
-    ShowPrompt(title or MultiBot.L("info.hunterpeteditentervalue"), function(text)
+    MultiBot.ShowPrompt(title or MultiBot.L("info.hunterpeteditentervalue"), function(text)
         if text and text ~= "" and targetName then
             SendChatMessage(string.format(formatString, text), "WHISPER", nil, targetName)
         end
@@ -899,13 +899,7 @@ function HunterQuick:EnsureSearchFrame()
     local visibleRows = 17
     local offset = 0
     local results = {}
-    local familyLocalization = MultiBot.PET_FAMILY_L10N and MultiBot.PET_FAMILY_L10N[GetLocale()] or nil
-
     local function getFamilyLabel(familyId)
-        if familyLocalization and familyLocalization[familyId] then
-            return familyLocalization[familyId]
-        end
-
         return MultiBot.PET_FAMILY[familyId] or "?"
     end
 
@@ -942,19 +936,6 @@ function HunterQuick:EnsureSearchFrame()
         row.previewButton = previewButton
 
         host.Rows[index] = row
-    end
-
-    local function localeField()
-        local locale = GetLocale():lower()
-        if locale == "frfr" then return "name_fr" end
-        if locale == "dede" then return "name_de" end
-        if locale == "eses" then return "name_es" end
-        if locale == "esmx" then return "name_esmx" end
-        if locale == "kokr" then return "name_ko" end
-        if locale == "zhtw" then return "name_zhtw" end
-        if locale == "zhcn" then return "name_zhcn" end
-        if locale == "ruru" then return "name_ru" end
-        return "name_en"
     end
 
     function host.RefreshRows(hostFrame)
@@ -997,12 +978,11 @@ function HunterQuick:EnsureSearchFrame()
     function host.Refresh(hostFrame)
         wipe(results)
         local filter = (editBox:GetText() or ""):lower()
-        local field = localeField()
 
         for creatureId, info in pairs(MultiBot.PET_DATA) do
-            local localizedName = info[field] or info.name_en
-            if localizedName:lower():find(filter, 1, true) then
-                results[#results + 1] = { id = creatureId, name = localizedName, family = info.family, display = info.display }
+            local petName = info.name_en
+            if petName and petName:lower():find(filter, 1, true) then
+                results[#results + 1] = { id = creatureId, name = petName, family = info.family, display = info.display }
             end
         end
 
@@ -1053,17 +1033,14 @@ function HunterQuick:ShowFamilyFrame(targetName)
     frame.Rows = {}
 
     local rowHeight = 18
-    local locale = GetLocale()
-    local localization = MultiBot.PET_FAMILY_L10N and MultiBot.PET_FAMILY_L10N[locale]
     local families = {}
 
     for familyId, englishName in pairs(MultiBot.PET_FAMILY) do
-        local localized = (localization and localization[familyId]) or englishName
-        table.insert(families, { id = familyId, eng = englishName, txt = localized })
+        table.insert(families, { id = familyId, name = englishName })
     end
 
     table.sort(families, function(left, right)
-        return left.txt < right.txt
+        return left.name < right.name
     end)
 
     for index, data in ipairs(families) do
@@ -1076,11 +1053,11 @@ function HunterQuick:ShowFamilyFrame(targetName)
 
         row.text = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         row.text:SetPoint("LEFT")
-        row.text:SetText("|cffffd200" .. data.txt .. "|r")
+        row.text:SetText("|cffffd200" .. data.name .. "|r")
         row:SetScript("OnClick", function()
             local currentTargetName = frame.TargetName
             if currentTargetName then
-                SendChatMessage(("tame family %s"):format(data.eng), "WHISPER", nil, currentTargetName)
+                SendChatMessage(("tame family %s"):format(data.name), "WHISPER", nil, currentTargetName)
             end
             frame:Hide()
         end)

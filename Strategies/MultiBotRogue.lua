@@ -28,17 +28,17 @@ MultiBot.addRogue = function(pFrame, pCombat, pNormal)
 		MultiBot.OnOffActionToTarget(pButton, "co +dps,?", "co -dps,?", pButton.getName())
 	end
 
-	-- STEALTH (maintenir le camouflage HORS COMBAT)
+	-- STEALTH (stay stealthed OUT OF COMBAT)
 	tFrame.addButton("Stealth", 0, 78, "ability_stealth",  MultiBot.L("tips.rogue.dps.stealth")).setDisable()
 	.doLeft = function(pButton)
-		-- "stealth" est une stratégie non-combat : on la pousse côté pNormal
+		-- "stealth" is a non-combat strategy, so it is pushed on the pNormal side
 		MultiBot.OnOffActionToTarget(pButton, "co +stealth,?", "co -stealth,?", pButton.getName())
 	end
 
-	-- STEALTHED (comportement EN CAMOUFLAGE en combat)
+	-- STEALTHED (behaviour WHILE STEALTHED in combat)
 	tFrame.addButton("Stealthed", 0, 104, "ability_sap", MultiBot.L("tips.rogue.dps.stealthed")).setDisable()
 	.doLeft = function(pButton)
-		-- Pour entrer en mode "stealthed", on coupe dps et on force stealthed ; l'inverse pour repasser en dps.
+		-- Entering "stealthed" turns dps off and forces stealthed on; the reverse switches back to dps.
 		if(MultiBot.OnOffActionToTarget(pButton, "co +stealthed,?", "co -stealthed,?", pButton.getName())) then
 			pButton.getButton("Dps")      .setDisable()
 			pButton.getButton("DpsAoe")   .setDisable()
@@ -46,7 +46,7 @@ MultiBot.addRogue = function(pFrame, pCombat, pNormal)
 		end
 	end
 
-	-- BOOST (active les CD offensifs : Adrenaline Rush, Blade Flurry, etc.)
+	-- BOOST (enables the offensive cooldowns: Adrenaline Rush, Blade Flurry, etc.)
 	tFrame.addButton("Boost", 0, 130, "ability_mage_potentspirit", MultiBot.L("tips.rogue.dps.boost")).setDisable()
 	.doLeft = function(pButton)
 		MultiBot.OnOffActionToTarget(pButton, "co +boost,?", "co -boost,?", pButton.getName())

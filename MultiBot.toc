@@ -34,15 +34,7 @@ UI\MultiBotOptions.lua
 Core\MultiBotThrottle.lua
 Core\MultiBotAsync.lua
 
-Locales\MultiBotAceLocale.lua
 Locales\MultiBotAceLocale-enUS.lua
-Locales\MultiBotAceLocale-frFR.lua
-Locales\MultiBotAceLocale-esES.lua
-Locales\MultiBotAceLocale-deDE.lua
-Locales\MultiBotAceLocale-enGB.lua
-Locales\MultiBotAceLocale-ruRU.lua
-Locales\MultiBotAceLocale-zhCN.lua
-Locales\MultiBotAceLocale-koKR.lua
 Data\HunterPetFamily.lua
 Data\HunterPetList_1.lua
 Data\HunterPetList_2.lua

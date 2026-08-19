@@ -305,6 +305,33 @@
     pas appris, retour quand une commande n'atteint aucun bot (`RTSC_ACK` / `POSITION_ACK`
     exposaient déjà `executed`, l'addon le jetait), sélection en attente affichée dans l'infobulle,
     `Browse` n'écrase plus `button.state`, et `GET~RTSC` est réessayé à l'ouverture du panneau.
+  * RTSC : l'affichage restait un clic en retard sur un état que la barre pilotait pourtant
+    correctement — une case enregistrée ou supprimée ne changeait d'aspect qu'à l'action suivante,
+    et une sélection faite au simple cast (rubber-band, sans rôle sélectionné) n'apparaissait
+    jamais sur la pastille. Trois causes, toutes côté addon :
+    * `SeeSpellAction` travaille sur le paquet **sortant** du maître (`CMSG_CAST_SPELL`), donc un
+      cast fait tout son effet sur les bots même si le serveur ne renvoie jamais
+      `UNIT_SPELLCAST_SUCCEEDED` — or tout le rafraîchissement post-cast en dépendait.
+      `UNIT_SPELLCAST_SENT` est ajouté **en secours** (différé de 1 s, annulé si `SUCCEEDED` a
+      déjà traité le cast) : l'événement fiable garde la priorité et un cast n'est jamais traité
+      deux fois.
+    * `save` / `save here` / `unsave` passent par la file de commandes des bots : la relecture qui
+      suit l'action peut répondre **avant** qu'ils l'aient appliquée. Les marques optimistes sont
+      donc horodatées (`markSlotPending`) et tiennent `RTSC_CAST_SETTLE + 1 s`. Supprimer une case
+      ne relit plus l'état immédiatement (course perdue d'avance) : repeinte tout de suite, relue
+      après le délai de stabilisation, comme l'enregistrement.
+    * Relecture de fond toutes les 5 s tant que la ligne RTSC est ouverte : tout ce que le maître
+      n'a pas demandé explicitement (sélection rubber-band, commande arrivée après sa relecture,
+      bot reconnecté) n'avait aucun chemin vers l'écran. Suspendue pendant qu'une relecture
+      délibérée est en attente, arrêtée dès que la ligne est masquée.
+  * RTSC : 8 boutons de groupe au lieu de 5 — un raid compte huit sous-groupes et le filtre
+    `@group<n>` de playerbots lit `GetSubGroup() + 1` sans borne haute (`SubGroupChatFilter`),
+    donc les groupes 6 à 8 étaient adressables depuis toujours, la barre ne les dessinait pas.
+    Aucun changement serveur. `Icons/` ne fournit d'art que pour 1-5 : 6-8 reprennent l'icône RTSC
+    générique avec leur numéro sur la face (comme les emplacements). La rangée de groupes allant
+    désormais jusqu'à x=240, le bloc toujours visible glisse d'un cran à droite (`@all` 270,
+    Browse 300, séparateur 301, Move 330, Last 360, Here 390). Infobulles ajoutées dans les
+    8 fichiers de locale (réduits depuis au seul `enUS`, cf. « Localisation / qualité »).
 
 ### Iconos / Itemus / templates
 
@@ -365,12 +392,80 @@
 
 ### Localisation / qualité
 
+* **English-only branch.** Removed the seven non-English locale files (`frFR`, `esES`,
+  `deDE`, `enGB`, `ruRU`, `zhCN`, `koKR`) and the empty `Locales/MultiBotAceLocale.lua`
+  stub; `Locales/MultiBotAceLocale-enUS.lua` is now the single locale file and registers
+  itself as the AceLocale default, so any client locale resolves to it. Also dropped, as
+  dead code on an English client: the per-locale pet names in `Data/HunterPetList_*`
+  and `PET_FAMILY_L10N`, the localized class aliases and multi-language account-level
+  patterns in `Core/MultiBot.lua`, the zhCN branch in `UI/MultiBotStats.lua`, and the
+  Chinese/German chat-parsing branches in `Core/MultiBotHandler.lua`,
+  `UI/MultiBotInventoryFrame.lua`, `UI/MultiBotSpell.lua`, `UI/MultiBotItemusFrame.lua`
+  and `UI/MultiBotPVPUI.lua`. All French comments and French user-facing strings
+  (slash-command output, layout error codes, `CreatorUI` gender labels, the `InspectUI`
+  unequip hint, `Options` fallbacks) are now English.
+  Follow-up (not done): this `TODO.md` and `docs/m12-debug-mode-emploi.md` are still
+  written in French.
 * Tooltips hardcodés de plusieurs fichiers déplacés vers les locales Ace3.
 * Ajout / correction de clés de traduction pour RTI et LeftCore.
 * Corrections Lua lint déjà traitées :
   * `table.getn` remplacé ;
   * variables inutilisées supprimées ;
   * champs globaux non définis corrigés selon les lots concernés.
+
+### Quality pass (scheduler, namespace, dead code)
+
+* **Timer scheduler rewritten (`Core/MultiBotAsync.lua`).** `TimerAfter` used to
+  `CreateFrame("Frame")` per call whenever `C_Timer` was missing — which is always on
+  3.3.5a — and WoW never garbage-collects frames. The request watchdog re-arms itself
+  every 2.5s for the whole session, so the addon leaked a permanent frame roughly every
+  2.5 seconds. There is now one shared OnUpdate driver with a pending list; it hides
+  itself when nothing is scheduled. Timers created from inside a firing callback are
+  spliced in after the pass, so `NextTick` still means "next frame" and a
+  self-rescheduling callback cannot spin within one frame. Added `MultiBot.CancelTimer`
+  (handle returned by `TimerAfter`/`NextTick`). `_G.TimerAfter` is still published for
+  compatibility, but a pre-existing global of that name is no longer adopted.
+* **Chat throttle no longer runs an OnUpdate while idle** (`Core/MultiBotThrottle.lua`):
+  the flush frame is shown on enqueue and hides itself when the queue drains; tokens
+  refill from elapsed wall-clock on wake-up, so an idle period still restores the burst.
+* **Locale strings stopped polluting the addon namespace.** `ApplyLocaleKeyValues`
+  exploded every dotted key into nested tables on the `MultiBot` global (~1000 keys);
+  nothing ever read them, and the first path segment silently pre-created
+  `MultiBot.inventory` / `.talent` / `.spellbook` / `.spec` before the real UI frames
+  claimed those fields. The function and its call are gone; `MultiBot.L` is the only
+  lookup path, and it now caches the resolved AceLocale table instead of re-resolving it
+  on every tooltip.
+* **Fixed nil-call bugs found by tightening the lint allowlist:**
+  * `UI/MultiBotInventoryItem.lua` — the destroy-confirmation popup closed over
+    `sendInventoryItemCommand` before its `local` existed, so it compiled against the nil
+    global and OnAccept threw instead of destroying the item (forward-declared).
+  * `UI/MultiBotTalentFrame.lua` — `getGlyphItemType` called `ensureHiddenTooltip`, a
+    file-local of `MultiBotAceUI.lua`; now uses `MultiBot.AceUI.EnsureHiddenTooltip`.
+  * `Core/MultiBotEngine.lua` — `substr(...)` is not a WoW global (now `strsub`); `tParts`
+    and `tSpace` were accidental globals (now locals).
+  * `UI/MultiBotInventoryFrame.lua` — window title fell back to `MB_INVENTORY_LABEL`,
+    which was never defined anywhere; now a localized `inventory.title`.
+  * `UI/MultiBotTalentFrame.lua` — `strsplit(",%s*", …)` passed a Lua pattern to an API
+    that takes delimiter *characters*.
+* **Quests All (Group) works in a raid** (`UI/MultiBotQuestsMenu.lua`): it enumerated only
+  `GetNumPartyMembers()`, which is 0 in a raid, so the awaiting-bot set was empty while
+  `ActionToGroup` broadcast to RAID and the aggregation never completed.
+* **Reset window positions is nil-safe** (`UI/MultiBotMainUI.lua`): windows are built
+  lazily, so it no longer throws on the first one that has not been opened yet and leaves
+  the remaining windows unmoved.
+* **Namespace hygiene:** `ShowPrompt` and `HandleQuestsAllResponse` are no longer globals
+  (`MultiBot.ShowPrompt` / file-local); generic names like these can collide with any
+  other loaded addon.
+* **Dead code:** deleted `UI/MultiBotIconos.lua` (6,004 lines) — it was not in
+  `MultiBot.toc` at all, and is a stale copy of `Data/MultiBotIconos.lua` plus an
+  `addIcons` superseded by `UI/MultiBotIconosFrame.lua`.
+* **Lint config** (`.luacheckrc`): `std` is now `lua51` (was `lua53`, which accepted syntax
+  and library calls the client does not have), and the allowlist entries that were masking
+  the accidental globals/typos above were removed.
+* Localized the last hardcoded UI strings and the remaining French user-facing text
+  (`tips.every.characterinfo` "Infos personnage", the throttle banner's "rafale", the
+  quest-log tooltip's "Groupe :"), and added the two `tips.every.*` keys that were missing
+  from the locale table entirely.
 
 ## Règles de suivi
 

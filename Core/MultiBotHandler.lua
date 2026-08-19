@@ -676,7 +676,7 @@ function MultiBot.SaveMainBarLayoutForCurrentPlayer()
 	local ownerKey = getPlayerLayoutOwnerKey()
 	local store = getGlobalLayoutLibrary(true)
 	if not store then
-		return false, "store_global_indisponible"
+		return false, "global_store_unavailable"
 	end
 	store[ownerKey] = payload
 	return true, ownerKey, payload
@@ -712,18 +712,18 @@ end
 function MultiBot.ImportSavedMainBarLayout(ownerKey)
 	local payload = MultiBot.GetSavedMainBarLayoutPayload(ownerKey)
 	if not payload then
-		return false, "layout_introuvable"
+		return false, "layout_not_found"
 	end
 	return MultiBot.ImportMainBarLayoutPayload(payload)
 end
 
 function MultiBot.DeleteSavedMainBarLayout(ownerKey)
 	if type(ownerKey) ~= "string" or ownerKey == "" then
-		return false, "owner_invalide"
+		return false, "invalid_owner"
 	end
 	local store = getGlobalLayoutLibrary(true)
 	if not store or store[ownerKey] == nil then
-		return false, "layout_introuvable"
+		return false, "layout_not_found"
 	end
 	store[ownerKey] = nil
 	return true
@@ -806,7 +806,7 @@ end
 
 function MultiBot.ImportMainBarLayoutPayload(payload)
 	if type(payload) ~= "string" or payload == "" then
-		return false, "payload_vide"
+		return false, "empty_payload"
 	end
 
 	local tokens = {}
@@ -814,7 +814,7 @@ function MultiBot.ImportMainBarLayoutPayload(payload)
 		tokens[#tokens + 1] = token
 	end
 	if tokens[1] ~= LAYOUT_EXPORT_VERSION then
-		return false, "version_invalide"
+		return false, "invalid_version"
 	end
 
 	local imported = 0
@@ -834,7 +834,7 @@ function MultiBot.ImportMainBarLayoutPayload(payload)
 	end
 
 	if imported == 0 then
-		return false, "aucune_donnee_importee"
+		return false, "no_data_imported"
 	end
 	return true, imported
 end
@@ -1356,7 +1356,7 @@ local function areAllQuestsAllBotsCompleted()
 	return true
 end
 
-function HandleQuestsAllResponse(rawMsg, author)
+local function HandleQuestsAllResponse(rawMsg, author)
 	local questAllBuffer = MultiBot.Store.EnsureRuntimeTable("_questAllBuffer")
 	MultiBot.Store.EnsureTableField(questAllBuffer, author, {})
 	table.insert(questAllBuffer[author], rawMsg)
@@ -1516,7 +1516,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
     if(event == "ADDON_LOADED" and arg1 == "MultiBot") then
 	        -- Core startup helpers are now routed via lifecycle (OnInitialize/OnEnable).
-	        -- [EXISTANT] restauration des positions / états
+	        -- [EXISTING] restore frame positions / states
 		restoreBoundFramePoints()
 
 	        -- Restore MultiBot bar visibility from saved state (default visible).
@@ -1656,7 +1656,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 	if(event == "CHAT_MSG_SYSTEM") then
 	MultiBot.dprint("SYS", arg1) -- DEBUG
 
-		-- Détection générique du niveau de compte (toutes langues prises en charge via patrons)
+		-- Account level detection (pattern-based, see MultiBot._acctlvl_patterns)
         do
           local msg = arg1
           if MultiBot.GM_DetectFromSystem and type(msg) == "string" then
@@ -1679,12 +1679,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 		end
 
 		if(MultiBot.auto.release == true) then
-			if(MultiBot.isInside(arg1, "已经死亡")) then
-				SendChatMessage("release", "WHISPER", nil, MultiBot.doReplace(arg1, "已经死亡。", ""))
-				return
-			end
-
-			if(MultiBot.isInside(arg1, "ist tot", "has dies", "has died")) then
+			if(MultiBot.isInside(arg1, "has dies", "has died")) then
 				SendChatMessage("release", "WHISPER", nil, MultiBot.doSplit(arg1, " ")[1])
 				return
 			end
@@ -1715,7 +1710,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
             if not (MultiBot.frames and MultiBot.frames["MultiBar"]
                     and MultiBot.frames["MultiBar"].frames
                     and MultiBot.frames["MultiBar"].frames["Units"]) then
-                -- UI pas encore prête : re-dispatch the same event through the parameterized
+                -- UI not built yet: re-dispatch the same event through the parameterized
                 -- dispatcher. (The old version set the deprecated event/arg1 GLOBALS and called
                 -- the OnEvent script with no arguments — a silent no-op since the handler reads
                 -- its parameters, so the roster line was dropped.)
@@ -1740,7 +1735,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 			-- PLAYERBOTS --
 
-			-- On reste sur le format historique : "Bot roster: +Name Class, -Name Class, ..."
+			-- Historic format is kept: "Bot roster: +Name Class, -Name Class, ..."
 			local tTable = MultiBot.doSplit(string.sub(arg1, 13), ", ")
 			MultiBot.dprint("ROSTER_PARSE_COUNT", #tTable) -- DEBUG
 
@@ -1752,12 +1747,12 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 				local rawClassToken = tBot[2]
 
 				if rawNameToken and rawClassToken then
-					local botName  = string.sub(rawNameToken, 2) -- enlève le signe +/-
+					local botName  = string.sub(rawNameToken, 2) -- strips the leading +/- sign
 					local botClass = MultiBot.toClass(rawClassToken)
 
-					-- Filtre de sécurité :
-					--  - pas de nom vide
-					--  - pas de classe inconnue => on évite les boutons Unknown
+					-- Safety filter:
+					--  - no empty name
+					--  - no unknown class, so we never create "Unknown" buttons
 					if botName ~= "" and botClass and botClass ~= "Unknown" then
 						local botButton = MultiBot.addPlayer(botClass, botName).setDisable()
 						bindUnitToggleHandlers(botButton, { requireEnabledStateOnRight = true })
@@ -1776,12 +1771,12 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 			MultiBot.dprint("INDEX_PLAYERS_SIZE", #(MultiBot.index.players or {})) -- DEBUG
 			do local n=0; for _ in pairs(MultiBot.index.classes.players or {}) do n=n+1 end; MultiBot.dprint("INDEX_CLASSES_PLAYERS_KEYS", n) end -- DEBUG
 
-        -- La liste des players est prête : on met l’index Favoris à jour
+        -- The players list is ready: refresh the Favorites index
         if MultiBot.UpdateFavoritesIndex then MultiBot.UpdateFavoritesIndex() end
 
-        -- UI REFRESH (INCONDITIONNEL) :
-        -- Rafraîchit la vue en réutilisant le roster courant (players/favorites/actives/…)
-        -- pour ne pas écraser le choix de l’utilisateur.
+        -- UI REFRESH (UNCONDITIONAL):
+        -- Redraw the view reusing the current roster (players/favorites/actives/...)
+        -- so the user's own choice is never overwritten.
         do
           local unitsBtn = MultiBot.frames
                           and MultiBot.frames["MultiBar"]
@@ -1792,7 +1787,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
             unitsBtn.doLeft(unitsBtn, roster, unitsBtn.filter)
           end
         end
-        -- Retry différé : couvre le cas où l’UI n’est pas encore prête (timing au login)
+        -- Deferred retry: covers the case where the UI is not built yet (login timing)
         MultiBot.TimerAfter(0.05, function()
           local unitsBtn = MultiBot.frames
                           and MultiBot.frames["MultiBar"]
@@ -1875,8 +1870,8 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 			if(tButton == nil) then return end
 
             if(MultiBot.isMember(tName)) then
-               -- On ne redemande plus les stratégies ici pour éviter les doublons.
-               -- Le flux normal via le WHISPER "Hello" s'en chargera.
+               -- Strategies are no longer re-requested here, to avoid duplicates.
+               -- The normal flow via the "Hello" WHISPER takes care of it.
                if(BridgeBootOwnsState() and MultiBot.Comm and MultiBot.Comm.RequestState) then
                   tButton.waitFor = "BRIDGE_STATE"
                   tButton.setEnable()
@@ -2006,31 +2001,31 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 		if MultiBot.awaitGlyphs and author == MultiBot.awaitGlyphs then
 
-			-- On ne traite que les réponses commençant par "Glyphs:" ou "No glyphs"
+			-- Only handle replies starting with "Glyphs:" or "No glyphs"
 			if not rawMsg:match("^[Gg]lyphs:") and not rawMsg:match("^[Nn]o glyphs") then
 				DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[ERROR]|r " .. MultiBot.L("talent.glyphs.error_ignored_non_glyph"))
 				return
 			end
 
-			-- On extrait tout ce qui suit "Glyphs:"
+			-- Extract everything after "Glyphs:"
 			local rest = rawMsg:match("^[Gg]lyphs:%s*(.*)") or ""
 			local ids = {}
 
 			if rest:lower():match("^no glyphs") then
-				-- pas de glyphe → on met 6 zéros
+				-- no glyph -> fill 6 zeroes
 				for i = 1, 6 do ids[i] = 0 end
 			else
-				-- on récupère directement chaque ID depuis les liens cliquables
+				-- read each id straight out of the clickable item links
 				for id in rest:gmatch("|Hitem:(%d+):") do
 					table.insert(ids, tonumber(id))
 				end
-				-- on complète si moins de 6
+				-- pad up to 6 if fewer were reported
 				for i = #ids + 1, 6 do
 					ids[i] = 0
 				end
 			end
 
-			-- On stocke cette liste pour le rafraîchissement
+			-- Store the list for the refresh below
 			local receivedGlyphs = (MultiBot.Store and MultiBot.Store.EnsureRuntimeTable and MultiBot.Store.EnsureRuntimeTable("receivedGlyphs")) or MultiBot.receivedGlyphs
 			if type(receivedGlyphs) ~= "table" then
 				receivedGlyphs = {}
@@ -2038,7 +2033,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 			end
 			receivedGlyphs[author] = {}
 
-			-- Détermination du type Major/Minor et remplissage
+			-- Resolve the Major/Minor type and fill the sockets
 			local unit = MultiBot.toUnit(author)
 			local _, cf = UnitClass(unit or "player")
 			local classKey = (cf == "DEATHKNIGHT")
@@ -2046,15 +2041,15 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 							or cf:sub(1,1)..cf:sub(2):lower()
 			local glyphDB = MultiBot.data.talent.glyphs[classKey] or {}
 
-			-- Mappage des sockets
+			-- Socket mapping
 			local map = { 1, 2, 5, 6, 4, 3 }
 			for idx, id in ipairs(ids) do
-				local sock = map[idx]                    -- n° de socket cible
+				local sock = map[idx]                    -- target socket number
 				local typ  = (glyphDB.Major and glyphDB.Major[id]) and "Major" or "Minor"
 				receivedGlyphs[author][sock] = { id = id, type = typ }
 			end
 
-			-- Si l'onglet Glyphes est ouvert, on force son rafraîchissement.
+			-- If the Glyphs tab is open, force a refresh.
 			local glyphFrameKey = MultiBot.TalentTabGroups and MultiBot.TalentTabGroups.GLYPH
 			local glyphFrame = glyphFrameKey and MultiBot.talent.frames[glyphFrameKey]
 			if glyphFrame and glyphFrame:IsShown() then
@@ -2068,12 +2063,6 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 		-- END GLYPHES --
 
 		if(MultiBot.auto.release == true) then
-			-- Graveyard not ready to talk Bot in the chinese Version --
-			if(arg1 == "在墓地见我") then
-				local tGyButton = unitsButton(arg2); if(tGyButton ~= nil) then tGyButton.waitFor = "你好" end
-				return
-			end
-
 			if(arg1 == "Meet me at the graveyard") then
 				SendChatMessage("summon", "WHISPER", nil, arg2)
 				return
@@ -2103,16 +2092,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 		local tButton = unitsButton(arg2)
 
-		if(MultiBot.auto.release == true) then
-			-- Graveyard ready to talk Bot in the chinese Version --
-			if(tButton ~= nil and tButton.waitFor == "你好" and arg1 == "你好") then
-				SendChatMessage("summon", "WHISPER", nil, arg2)
-				tButton.waitFor = ""
-				return
-			end
-		end
-
-		if(MultiBot.isInside(arg1, "Hello", "你好") and tButton == nil) then
+		if(MultiBot.isInside(arg1, "Hello") and tButton == nil) then
             local tUnit = MultiBot.toUnit(arg2)
             if not (tUnit and UnitExists(tUnit)) then
                -- Bot is still not in party/raid we stop
@@ -2126,7 +2106,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 				bindUnitToggleHandlers(tButton, { requireEnabledStateOnRight = false })
 			elseif(tButton == nil) then return end
 
-		if(MultiBot.isInside(arg1, "Hello", "你好") and tButton.class == "Unknown" and tButton.roster == "friends") then
+		if(MultiBot.isInside(arg1, "Hello") and tButton.class == "Unknown" and tButton.roster == "friends") then
 			local tName = ""
 			local tLevel = ""
 			local tClass = ""
@@ -2164,7 +2144,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 			tButton.class = tClass
 		end
 
-		if(MultiBot.isInside(arg1, "Hello", "你好")) then
+		if(MultiBot.isInside(arg1, "Hello")) then
 			if(BridgeBootOwnsState() and MultiBot.Comm and MultiBot.Comm.RequestState) then
 				tButton.waitFor = "BRIDGE_STATE"
 				MultiBot.Comm.RequestState(arg2)
@@ -2183,7 +2163,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 			return
 		end
 
-		if(MultiBot.isInside(arg1, "Goodbye", "再见")) then
+		if(MultiBot.isInside(arg1, "Goodbye")) then
 			return
 		end
 
@@ -2295,7 +2275,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 
 		-- Inventory --
 
-		if(tButton.waitFor == "INVENTORY" and MultiBot.isInside(arg1, "Inventory", "背包")) then
+		if(tButton.waitFor == "INVENTORY" and MultiBot.isInside(arg1, "Inventory")) then
 			if(MultiBot.inventory and MultiBot.inventory.beginPayload) then
 				MultiBot.inventory:beginPayload(arg2)
 			else
@@ -2315,7 +2295,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 			return
 		end
 
-		if(tButton.waitFor == "ITEM" and (MultiBot.beInside(arg1, "Bag,", "Dur") or MultiBot.beInside(arg1, "背包", "耐久度"))) then
+		if(tButton.waitFor == "ITEM" and MultiBot.beInside(arg1, "Bag,", "Dur")) then
 			if MultiBot.inventory and MultiBot.inventory.applySummaryLine then
 				MultiBot.inventory:applySummaryLine(arg1)
 			end
@@ -2344,30 +2324,6 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 		-- EQUIPPING --
 
 		if(MultiBot.inventory:IsVisible()) then
-			if(MultiBot.isInside(arg1, "装备", "卸下", "使用", "吃", "喝", "盛宴", "摧毁")) then
-				if(MultiBot.RequestInventoryPostActionRefresh and MultiBot.RequestInventoryPostActionRefresh(tButton.name, 0.45, 1.20)) then
-					return
-				end
-
-				if(MultiBot.RequestInventoryRefresh and MultiBot.RequestInventoryRefresh(tButton.name, 0.45)) then
-					return
-				end
-
-				if LegacyChatFallbackEnabled() then
-					tButton.waitFor = "INVENTORY"
-					if(MultiBot.TimerAfter) then
-						MultiBot.TimerAfter(0.45, function()
-							SendChatMessage("items", "WHISPER", nil, tButton.name)
-						end)
-					else
-						SendChatMessage("items", "WHISPER", nil, tButton.name)
-					end
-				else
-					tButton.waitFor = ""
-				end
-				return
-			end
-
 			if(MultiBot.isInside(string.lower(arg1), "equipping", "unequipping", "using", "eating", "drinking", "feasting", "destroyed", "removed", "taking off")) then
 				if(MultiBot.RequestInventoryPostActionRefresh and MultiBot.RequestInventoryPostActionRefresh(tButton.name, 0.45, 1.20)) then
 					return
@@ -2409,12 +2365,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 		if(MultiBot.inventory:IsVisible()) then
 			local tButton = nil
 
-			if(MultiBot.isInside(arg1, "获得了物品")) then
-				local tName = MultiBot.doReplace(MultiBot.doSplit(arg1, ":")[1], "获得了物品", "")
-				tButton = unitsButton(tName)
-			end
-
-			if(MultiBot.isInside(string.lower(arg1), "beute", "receives")) then
+			if(MultiBot.isInside(string.lower(arg1), "receives")) then
 				local tName = MultiBot.doSplit(arg1, " ")[1]
 				tButton = unitsButton(tName)
 			end
@@ -2587,7 +2538,7 @@ local function ClassCommand(msg)
   printToChat(formatClassResolutionMessage(msg))
 end
 
--- /mbclasstest -> batterie de cas utiles (aliases + localisés FR si le client est frFR)
+-- /mbclasstest -> runs the class resolver over a batch of useful samples
 local function ClassTestCommand()
   for _, sample in ipairs(CLASS_TEST_SAMPLES) do
     printToChat(("[MB] '%s' -> %s"):format(sample, tostring(MultiBot.toClass(sample))))
@@ -2596,50 +2547,50 @@ end
 
 local function MainBarLayoutExportCommand()
   if not MultiBot.SaveMainBarLayoutForCurrentPlayer then
-    printToChat("[MB] Export indisponible.")
+    printToChat("[MB] Export unavailable.")
     return
   end
 
   local ok, ownerKeyOrError = MultiBot.SaveMainBarLayoutForCurrentPlayer()
   if not ok then
-    printToChat(("[MB] Export échoué: %s"):format(tostring(ownerKeyOrError)))
+    printToChat(("[MB] Export failed: %s"):format(tostring(ownerKeyOrError)))
     return
   end
-  printToChat(("[MB] Layout sauvegardé pour %s"):format(ownerKeyOrError))
+  printToChat(("[MB] Layout saved for %s"):format(ownerKeyOrError))
 end
 
 local function MainBarLayoutImportOwnerCommand(msg)
   if not MultiBot.ImportSavedMainBarLayout then
-    printToChat("[MB] Import (owner) indisponible.")
+    printToChat("[MB] Import (owner) unavailable.")
     return
   end
 
   local ownerKey = tostring(msg or "")
   ownerKey = string.match(ownerKey, "^%s*(.-)%s*$") or ""
   if ownerKey == "" then
-    printToChat("[MB] Usage: /mblio <NomJoueur-Royaume>")
+    printToChat("[MB] Usage: /mblio <PlayerName-Realm>")
     return
   end
 
   local ok, detail = MultiBot.ImportSavedMainBarLayout(ownerKey)
   if ok then
-    printToChat(("[MB] Layout '%s' importé (%s entrées)."):format(ownerKey, tostring(detail)))
+    printToChat(("[MB] Layout '%s' imported (%s entries)."):format(ownerKey, tostring(detail)))
     return
   end
-  printToChat(("[MB] Import '%s' échoué: %s"):format(ownerKey, tostring(detail)))
+  printToChat(("[MB] Import '%s' failed: %s"):format(ownerKey, tostring(detail)))
 end
 
 local function MainBarLayoutListCommand()
   if not MultiBot.GetSavedMainBarLayoutOwners then
-    printToChat("[MB] Liste layouts indisponible.")
+    printToChat("[MB] Layout list unavailable.")
     return
   end
   local owners = MultiBot.GetSavedMainBarLayoutOwners()
   if #owners == 0 then
-    printToChat("[MB] Aucun layout sauvegardé.")
+    printToChat("[MB] No saved layout.")
     return
   end
-  printToChat("[MB] Layouts sauvegardés:")
+  printToChat("[MB] Saved layouts:")
   for _, owner in ipairs(owners) do
     printToChat(" - " .. owner)
   end
@@ -2647,7 +2598,7 @@ end
 
 local function MainBarLayoutImportPayloadCommand(msg)
   if not MultiBot.ImportMainBarLayoutPayload then
-    printToChat("[MB] Import payload indisponible.")
+    printToChat("[MB] Import payload unavailable.")
     return
   end
 
@@ -2655,15 +2606,15 @@ local function MainBarLayoutImportPayloadCommand(msg)
   payload = string.match(payload, "^%s*(.-)%s*$") or ""
   local ok, detail = MultiBot.ImportMainBarLayoutPayload(payload)
   if ok then
-    printToChat(("[MB] Payload importé (%s entrées)."):format(tostring(detail)))
+    printToChat(("[MB] Payload imported (%s entries)."):format(tostring(detail)))
     return
   end
-  printToChat(("[MB] Import payload échoué: %s"):format(tostring(detail)))
+  printToChat(("[MB] Import payload failed: %s"):format(tostring(detail)))
 end
 
 local function MainBarLayoutShowPayloadCommand(msg)
   if not MultiBot.GetSavedMainBarLayoutPayload then
-    printToChat("[MB] Show payload indisponible.")
+    printToChat("[MB] Show payload unavailable.")
     return
   end
 
@@ -2674,7 +2625,7 @@ local function MainBarLayoutShowPayloadCommand(msg)
   end
   local payload = MultiBot.GetSavedMainBarLayoutPayload(ownerKey)
   if not payload then
-    printToChat(("[MB] Aucun payload pour '%s'."):format(ownerKey))
+    printToChat(("[MB] No payload for '%s'."):format(ownerKey))
     return
   end
   printToChat(("[MB] Payload '%s':"):format(ownerKey))
@@ -2683,37 +2634,37 @@ end
 
 local function MainBarLayoutDeleteCommand(msg)
   if not MultiBot.DeleteSavedMainBarLayout then
-    printToChat("[MB] Delete layout indisponible.")
+    printToChat("[MB] Delete layout unavailable.")
     return
   end
 
   local ownerKey = tostring(msg or "")
   ownerKey = string.match(ownerKey, "^%s*(.-)%s*$") or ""
   if ownerKey == "" then
-    printToChat("[MB] Usage: /mbldel <NomJoueur-Royaume>")
+    printToChat("[MB] Usage: /mbldel <PlayerName-Realm>")
     return
   end
 
   local ok, detail = MultiBot.DeleteSavedMainBarLayout(ownerKey)
   if ok then
-    printToChat(("[MB] Layout supprimé: %s"):format(ownerKey))
+    printToChat(("[MB] Layout deleted: %s"):format(ownerKey))
     return
   end
-  printToChat(("[MB] Suppression impossible (%s): %s"):format(ownerKey, tostring(detail)))
+  printToChat(("[MB] Delete failed (%s): %s"):format(ownerKey, tostring(detail)))
 end
 
 local function MainBarLayoutResetCommand()
   if not MultiBot.ResetMainBarLayoutState then
-    printToChat("[MB] Reset layout indisponible.")
+    printToChat("[MB] Reset layout unavailable.")
     return
   end
 
   local ok, removed = MultiBot.ResetMainBarLayoutState()
   if ok then
-    printToChat(("[MB] Layout reset effectué (%s clés supprimées)."):format(tostring(removed)))
+    printToChat(("[MB] Layout reset done (%s keys removed)."):format(tostring(removed)))
     return
   end
-  printToChat("[MB] Reset layout échoué.")
+  printToChat("[MB] Reset layout failed.")
 end
 
 local function normalizeDebugToken(value)
@@ -2737,7 +2688,7 @@ end
 local function DebugCommand(msg)
   local debugApi = MultiBot.Debug
   if type(debugApi) ~= "table" then
-    printToChat("[MB] Debug API indisponible.")
+    printToChat("[MB] Debug API unavailable.")
     return
   end
 
@@ -2750,7 +2701,7 @@ local function DebugCommand(msg)
 
   if action == "all" then
     if type(debugApi.SetAllEnabled) ~= "function" then
-      printToChat("[MB] Action indisponible: all")
+      printToChat("[MB] Action unavailable: all")
       return
     end
 
@@ -2761,13 +2712,13 @@ local function DebugCommand(msg)
 
   if action == "counters" then
     if type(debugApi.FormatCounters) ~= "function" then
-      printToChat("[MB] Action indisponible: counters")
+      printToChat("[MB] Action unavailable: counters")
       return
     end
 
     if subsystem == "reset" and type(debugApi.ResetCounters) == "function" then
       debugApi.ResetCounters()
-      printToChat("[MB] Compteurs perf réinitialisés.")
+      printToChat("[MB] Perf counters reset.")
       return
     end
 
@@ -2784,7 +2735,7 @@ local function DebugCommand(msg)
     if debugApi.SetEnabled and debugApi.SetEnabled(subsystem, true) then
       printToChat("[MB] Debug " .. subsystem .. " => on")
     else
-      printToChat("[MB] Sous-système invalide: " .. subsystem)
+      printToChat("[MB] Invalid subsystem: " .. subsystem)
     end
     return
   end
@@ -2793,20 +2744,20 @@ local function DebugCommand(msg)
     if debugApi.SetEnabled and debugApi.SetEnabled(subsystem, false) then
       printToChat("[MB] Debug " .. subsystem .. " => off")
     else
-      printToChat("[MB] Sous-système invalide: " .. subsystem)
+      printToChat("[MB] Invalid subsystem: " .. subsystem)
     end
     return
   end
 
   if action == "toggle" then
     if not debugApi.Toggle then
-      printToChat("[MB] Action indisponible: toggle")
+      printToChat("[MB] Action unavailable: toggle")
       return
     end
 
     local value = debugApi.Toggle(subsystem)
     if value == nil then
-      printToChat("[MB] Sous-système invalide: " .. subsystem)
+      printToChat("[MB] Invalid subsystem: " .. subsystem)
       return
     end
 
@@ -2814,7 +2765,7 @@ local function DebugCommand(msg)
     return
   end
 
-  printToChat("[MB] Action inconnue: " .. action)
+  printToChat("[MB] Unknown action: " .. action)
 end
 
 -- /mb was a bare toggle and the other twelve slash commands had no way to be discovered.

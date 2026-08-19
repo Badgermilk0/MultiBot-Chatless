@@ -12,7 +12,7 @@ if not StaticPopupDialogs["MULTIBOT_AUTOGEAR_CONFIRM"] then
     timeout = 0,
     whileDead = 1,
     hideOnEscape = 1,
-    preferredIndex = 3, -- évite les conflits d’index avec d’autres popups
+    preferredIndex = 3, -- avoids index clashes with other popups
   }
 end
 
@@ -102,17 +102,17 @@ end
 MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 
     -- MENU MISC --------------------------------------------
-    -- Crée un sous-frame « Misc » au-dessus du bouton
+    -- Create a "Misc" sub-frame above the button
     local tMisc = pFrame.addFrame("Misc",  64,  29)
     tMisc:Hide()
 
-    -- Bouton parent « Misc »
+    -- Parent "Misc" button
     local btnMisc = pFrame.addButton("Misc",  64,  0, "inv_misc_enggizmos_swissarmy", MultiBot.L("tips.every.misc"))
     btnMisc.doLeft = function(self)
        MultiBot.ShowHideSwitch(tMisc)
     end
 
-    -- Texture étoile
+    -- Star texture
     local STAR_TEX = "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_1"
     local y, dy = 0, 28
     -- Buttons inside the "Misc" sub-frame
@@ -127,7 +127,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
         },
         -- NEW: Favorite toggle (per-character)
         -- { "Favorite",   "Interface\\RaidFrame\\ReadyCheck-Ready",  MultiBot.L("tips.every.favorite"), function(b)
-        -- Favorite toggle (per-character) - étoile
+        -- Favorite toggle (per-character) - star
         { "Favorite",   STAR_TEX,  MultiBot.L("tips.every.favorite"), function(b)
             local name = b.getName()
             MultiBot.ToggleFavorite(name)
@@ -135,7 +135,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
             if tex then
               tex:SetTexture(MultiBot.SafeTexturePath(STAR_TEX))
 			  local isFav = MultiBot.IsFavorite(name)
-              -- Griser l’étoile quand favori, sinon couleur normale
+              -- Grey the star out when favorited, normal colour otherwise
               if tex.SetDesaturated then tex:SetDesaturated(isFav) end
               if tex.SetVertexColor then
                 if isFav then tex:SetVertexColor(0.5, 0.5, 0.5) else tex:SetVertexColor(1, 1, 1) end
@@ -151,7 +151,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
             end
           end
         },
-        { "CharacterInfo", "inv_misc_note_05", MultiBot.L("tips.every.characterinfo", "Infos personnage"), function(b)
+        { "CharacterInfo", "inv_misc_note_05", MultiBot.L("tips.every.characterinfo", "Character Info"), function(b)
             if MultiBot.OpenCharacterInfo then
                 MultiBot.OpenCharacterInfo(b.getName())
             end
@@ -177,7 +177,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
         if tex then
           tex:SetTexture(MultiBot.SafeTexturePath(STAR_TEX))
           local isFav = (name and MultiBot.IsFavorite and MultiBot.IsFavorite(name)) and true or false
-          -- Appliquer l’état visuel au chargement
+          -- Apply the visual state on load
           if tex.SetDesaturated then tex:SetDesaturated(isFav) end
           if tex.SetVertexColor then
             if isFav then tex:SetVertexColor(0.5, 0.5, 0.5) else tex:SetVertexColor(1, 1, 1) end
@@ -337,19 +337,19 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 		end
 	end
 
-	-- BOUTON SETTALENTS : toggle affichage de la barre des specs
+	-- SETTALENTS BUTTON: toggles the spec bar
     local btn = pFrame
         .addButton("SetTalents", 334, 0, "inv_sword_22", MultiBot.L("tips.every.settalent"))
-    -- état initial : toujours désactivé (zen, pas de barre affichée au load)
+    -- Initial state: always disabled (quiet start, no bar shown on load)
     btn:setDisable()
 
     btn.doLeft = function(self)
-      -- si le dropdown existe et est visible → on le ferme
+      -- if the dropdown exists and is visible, close it
       if MultiBot.spec.dropdown and MultiBot.spec.dropdown:IsShown() then
         MultiBot.spec:HideDropdown()
         self:setDisable()
       else
-        -- sinon on envoie la requête au bot, et on active le bouton
+        -- otherwise send the request to the bot and light the button up
         MultiBot.spec:RequestList(self:getName(), self)
         self:setEnable()
       end

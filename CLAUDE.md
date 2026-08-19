@@ -45,8 +45,12 @@ Units view:**
 4. **No automatic chat parsing** to refresh/populate UI — bridge-first only. Legacy chat is a
    diagnostic fallback gated by `MultiBot.allowLegacyChatFallback` (keep `false`). Keep the manual
    commands `who`, `co ?`, `nc ?`, `ss ?` working.
-5. **Server is out of scope**: don't change command-syntax expectations or anything only fixable
+5. **English only**: this branch ships no localization. `Locales/MultiBotAceLocale-enUS.lua` is
+   the single locale file (registered as the AceLocale default, so any client locale resolves to
+   it) — add new user-facing strings there, never hardcoded, and never re-add other locale files
+   or non-English chat-parsing branches. Comments and code must be in English.
+6. **Server is out of scope**: don't change command-syntax expectations or anything only fixable
    in `mod-multibot-bridge` / `mod-playerbots` (not in this workspace).
-6. **Keep docs honest**: changing a wire message, DB assumption, event, or design decision means
+7. **Keep docs honest**: changing a wire message, DB assumption, event, or design decision means
    updating the matching doc (`DESIGN.md`/`README.md`/`TODO.md`) in the same change. Don't break
    the README HTML.

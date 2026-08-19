@@ -25,7 +25,7 @@ local function specTip(key, fallback)
   return fallback or ("tips.spec." .. key)
 end
 
--- canonicalisation des petits préfixes
+-- canonicalisation of the short prefixes
 local specCanonical = {
   -- Paladin
   holy        = "Holy",
@@ -230,7 +230,7 @@ local specIconMap = {
   },
 }
 
--- renvoie le premier champ userdata trouvé dans un wrapper
+-- returns the first userdata field found in a wrapper
 local function unwrapFrame(obj)
     if type(obj) == "userdata" then return obj end
     if type(obj) == "table" then
@@ -248,7 +248,7 @@ local MultiBot = _G["MultiBot"] or {}
 _G["MultiBot"] = MultiBot
 
 local Spec = MultiBot.spec or {}
-Spec.currentBuild = {}  -- table pour conserver la build courante de chaque bot (ex : "0-13-58")
+Spec.currentBuild = {}  -- keeps each bot's current build (e.g. "0-13-58")
 Spec.busy = false
 Spec.pendingRefresh = nil
 MultiBot.spec = Spec
@@ -423,7 +423,7 @@ end
 
 function Spec:RequestList(bot, wrapper)
     if self.busy then
-        return                  --    on ignore le clic
+        return                  --    ignore the click
     end
     local frame = unwrapFrame(wrapper)
     if type(frame) ~= "userdata" then
@@ -441,14 +441,14 @@ function Spec:RequestList(bot, wrapper)
     }
     self.activeWrapper = wrapper
 
-    -- On garde volontairement la réponse legacy de la spé courante :
+    -- The legacy reply for the current spec is deliberately kept:
     -- "My current talent spec is: ...".
-    -- Les lignes d'aide inutiles renvoyées par cette commande sont masquées côté chat.
+    -- The useless help lines this command also returns are hidden on the chat side.
     suppressNextTalentUsageLines(bot)
     SendChatMessage("talents", "WHISPER", nil, bot)
 
-    -- La liste complète des modèles disponibles est maintenant demandée en bridge-first
-    -- pour éviter le spam "talents spec list" dans le chat
+    -- The full list of available templates is now requested bridge-first,
+    -- to avoid spamming "talents spec list" into the chat
     MultiBot.TimerAfter(0.2, function()
         if Spec.pending and Spec.pending.bot == bot then
             local comm = MultiBot.Comm or nil
@@ -741,7 +741,7 @@ local function getAceGUI()
 end
 
 local function debugSpecPath(path)
-    -- Debug volontairement désactivé : helper conservé pour ne pas toucher les callsites.
+    -- Debug deliberately disabled: the helper is kept so the callsites stay untouched.
     return path
 end
 

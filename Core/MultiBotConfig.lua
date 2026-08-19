@@ -3,8 +3,8 @@
 MultiBot = MultiBot or {}
 
 -- Chatless mode:
--- false = bridge-first, aucun fallback chat automatique legacy.
--- true  = réactive temporairement les anciens fallbacks chat pour diagnostic.
+-- false = bridge-first, no automatic legacy chat fallback.
+-- true  = temporarily re-enables the old chat fallbacks for diagnostics.
 MultiBot.allowLegacyChatFallback = false
 
 local aceDB = LibStub and LibStub("AceDB-3.0", true)

@@ -11,8 +11,6 @@ local function getSpellbookHeaderTokens()
 		MultiBot.L("info.spellbook") or "",
 		"Spells",
 		"Spels",
-		"法术",
-		"Магия",
 	}
 end
 
@@ -202,7 +200,6 @@ MultiBot.isSpellbookHeaderLine = function(pLine)
 		return false
 	end
 
-	--return MultiBot.isInside(pLine, SPELLBOOK, "Spells", "法术", "Магия")
     return MultiBot.isInside(pLine, unpack(getSpellbookHeaderTokens()))
 end
 
@@ -220,10 +217,6 @@ MultiBot.isSpellbookFooterLine = function(pLine)
 	end
 
 	if(MultiBot.beInside(pLine, "Bag,", "Dur") or MultiBot.beInside(pLine, "Bag,", "XP")) then
-		return true
-	end
-
-	if(MultiBot.beInside(pLine, "背包", "耐久度") or MultiBot.beInside(pLine, "背包", "经验值")) then
 		return true
 	end
 

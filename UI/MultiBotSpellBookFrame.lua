@@ -1,32 +1,32 @@
 local SPELLBOOK_PAGE_SIZE = 18
 
--- Réglages UI SpellBook (ACE3) : modifier ces valeurs pour ajuster rapidement le layout.
+-- SpellBook UI settings (ACE3): tweak these values to adjust the layout quickly.
 local SPELLBOOK_UI_DEFAULTS = {
-	-- Taille des icônes de sorts (largeur/hauteur du bouton icon).
+	-- Spell icon size (width/height of the icon button).
 	ICON_SIZE = 40,
-	-- Niveau de frame des icônes/boutons de sorts (base parent + boost).
+	-- Frame level of the spell icons/buttons (parent base + boost).
 	ICON_FRAMELEVEL_BOOST = 5,
-	-- Taille des checkboxes "ignore" associées aux sorts.
+	-- Size of the "ignore" checkboxes attached to the spells.
 	CHECKBOX_SIZE = 16,
-	-- Surélévation du FrameLevel des checkboxes pour capter les clics au-dessus des icônes.
+	-- Extra FrameLevel for the checkboxes, so they catch clicks above the icons.
 	CHECKBOX_FRAMELEVEL_BOOST = 30,
-	-- Décalage de la checkbox par rapport à l'icône de sort.
+	-- Checkbox offset relative to the spell icon.
 	CHECKBOX_OFFSET_X = 24,
 	CHECKBOX_OFFSET_Y = -25,
 
-	-- Position du bloc overlay dans le contenu de la fenêtre ACE3.
+	-- Position of the overlay block inside the ACE3 window content.
 	OVERLAY_LEFT_X = 18,
 	OVERLAY_TOP_Y = -42,
 	OVERLAY_RIGHT_X = -18,
 	OVERLAY_BOTTOM_Y = 18,
 
-	-- Position du texte de pagination (ex: 1/6).
+	-- Position of the pagination text (e.g. 1/6).
 	PAGE_TEXT_X = 0,
 	PAGE_TEXT_Y = -272,
-	-- Couleur du texte de pagination au format hex WoW (sans préfixe |cff).
+	-- Pagination text colour, WoW hex format (without the |cff prefix).
 	PAGE_TEXT_COLOR_HEX = "ffffff",
 
-	-- Position des boutons précédent/suivant (recentrés pour la fenêtre élargie).
+	-- Position of the previous/next buttons (re-centred for the widened window).
 	PREV_BUTTON_X = 168,
 	PREV_BUTTON_Y = -270,
 	NEXT_BUTTON_X = 223,
@@ -34,12 +34,12 @@ local SPELLBOOK_UI_DEFAULTS = {
 	NAV_BUTTON_WIDTH = 18,
 	NAV_BUTTON_HEIGHT = 18,
 
-	-- Positions X des colonnes (icône, titre, rang) en layout 3 colonnes.
-	-- Colonnes élargies pour laisser la place au nom du sort à droite de chaque icône.
+	-- Column X positions (icon, title, rank) in the 3-column layout.
+	-- Columns widened to leave room for the spell name right of each icon.
 	LEFT_ICON_X = 2,
 	MIDDLE_ICON_X = 138,
 	RIGHT_ICON_X = 274,
-	-- Nom + rang à droite de l'icône (icône = 40px), nom au-dessus du rang (même X).
+	-- Name + rank right of the icon (icon = 40px), name above rank (same X).
 	LEFT_TITLE_X = 46,
 	MIDDLE_TITLE_X = 182,
 	RIGHT_TITLE_X = 318,
@@ -47,22 +47,22 @@ local SPELLBOOK_UI_DEFAULTS = {
 	MIDDLE_RANK_X = 182,
 	RIGHT_RANK_X = 318,
 
-	-- Réglages Y des lignes (base + espacement vertical).
+	-- Row Y settings (base + vertical spacing).
 	ROW_SPACING_Y = 46,
 	ICON_BASE_Y = 10,
 	TITLE_BASE_Y = -2,
 	RANK_BASE_Y = -16,
-	-- Longueur max du nom de sort affiché à droite de l'icône (tronqué avec "..." au-delà ;
-	-- le nom complet reste visible dans l'infobulle au survol).
+	-- Max length of the spell name shown right of the icon (truncated with "..." beyond it;
+	-- the full name stays visible in the tooltip on hover).
 	NAME_MAX_LEN = 15,
 
-    -- Couleur des rangs au format hex WoW (sans préfixe |cff).
+    -- Rank colour, WoW hex format (without the |cff prefix).
     RANK_TEXT_COLOR_HEX = "ffcc00",
-    -- Surélévation du FrameLevel pour les textes (rang/titre) afin de rester visibles au-dessus des icônes.
+    -- Extra FrameLevel for the texts (rank/title) so they stay visible above the icons.
     TEXT_FRAMELEVEL_BOOST = 60,
-    -- Strata du layer texte (laisser DIALOG pour rester au-dessus de la zone SpellBook).
+    -- Strata of the text layer (leave DIALOG to stay above the SpellBook area).
     TEXT_FRAMESTRATA = nil,
-    -- Sous-couche de rendu pour les textes (FontString draw layer sublevel, 0..7).
+    -- Render sublayer for the texts (FontString draw layer sublevel, 0..7).
     TEXT_DRAW_SUBLEVEL = 5,
 }
 

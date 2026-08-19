@@ -201,8 +201,8 @@ MultiBot.SafeTexturePath = function(pTexture)
 	if type(pTexture) ~= "string" or pTexture == "" then
 		return "Interface\\Icons\\INV_Misc_QuestionMark"
 	end
-	-- Si l’appelant fournit déjà un chemin (avec / ou \), on le considère explicite
-	-- et on le renvoie tel quel, après normalisation vers "\"
+	-- If the caller already passed a path (with / or \), treat it as explicit and
+	-- return it as-is, after normalising the separators to "\".
     local tex = pTexture:gsub("/", "\\")
 	if tex:find("\\", 1, true) then
 		return tex
@@ -216,13 +216,13 @@ MultiBot.SafeTexturePath = function(pTexture)
     return tex
 end
 
--- Classe refactor
--- Sauvegarde l’ancienne version si elle existait avant refactor
+-- Class refactor
+-- Keep the pre-refactor implementation around if there was one
 if not MultiBot._toClass_legacy and type(MultiBot.toClass) == "function" then
   MultiBot._toClass_legacy = MultiBot.toClass
 end
 
--- Nouvelle version avec fallback
+-- New implementation, with a fallback to the legacy one
 MultiBot.toClass = function(pClass)
   if MultiBot.NormalizeClass then
     local canon = MultiBot.NormalizeClass(pClass)
@@ -273,16 +273,16 @@ MultiBot.toPoint = function(pFrame)
 	    if not pFrame then
 	        return 0, 0
 	    end
-	    -- Mesurer par rapport au parent global stable et arrondir à l’unité.
+	    -- Measure against the stable global parent and round to whole pixels.
 	    local uiRight = (UIParent and UIParent:GetRight()) or GetScreenWidth()
 	    local getRight = pFrame.GetRight or pFrame.getRight
 	    local getBottom = pFrame.GetBottom or pFrame.getBottom
 	    local xRight  = (type(getRight) == "function" and getRight(pFrame)) or 0
 	    local yBottom = (type(getBottom) == "function" and getBottom(pFrame)) or 0
-	    -- Offset vers BOTTOMRIGHT (négatif ou nul)
+	    -- Offset towards BOTTOMRIGHT (negative or zero)
 	    local offX = xRight - uiRight
 	    local offY = yBottom
-    -- Arrondi au plus proche pour éviter la dérive cumulée
+    -- Round to nearest to avoid cumulative drift
     return math.floor(offX + 0.5), math.floor(offY + 0.5)
 end
 
@@ -306,8 +306,8 @@ MultiBot.RaidPool = function(pUnit, oWho)
 		tWho = MultiBot.doReplace(tWho, "Blood Elf", "Blood-Elf")
 		tWho = MultiBot.doReplace(tWho, "Night Elf", "Night-Elf")
 
-		tParts = MultiBot.doSplit(tWho, ", ")
-		tSpace = MultiBot.doSplit(tParts[1], " ")
+		local tParts = MultiBot.doSplit(tWho, ", ")
+		local tSpace = MultiBot.doSplit(tParts[1], " ")
 		tScore = MultiBot.doSplit(tParts[2], " ")[1]
 
 		if(MultiBot.isInside(tSpace[5], "/")) then tIndex = { 5, 6, 7 } else
@@ -321,7 +321,9 @@ MultiBot.RaidPool = function(pUnit, oWho)
 		if(tClass == nil) then tClass = MultiBot.toClass(tSpace[tIndex[2]]) end
 		if(tRace == nil) then tRace = tSpace[1] end
 		if(tName == nil) then tName = pUnit end
-		if(tLevel == nil) then tLevel = substr(MultiBot.doSplit(tSpace[tIndex[3]], " ")[1], 2) end
+		-- `substr` is not a WoW global: this line threw whenever UnitLevel() was unavailable
+		-- for the parsed unit. strsub is the client's alias for string.sub.
+		if(tLevel == nil) then tLevel = strsub(MultiBot.doSplit(tSpace[tIndex[3]], " ")[1], 2) end
 	else
 		tScore = MultiBot.ItemLevel(pUnit)
 		tTabs[1] = GetNumTalents(1)
@@ -329,7 +331,7 @@ MultiBot.RaidPool = function(pUnit, oWho)
 		tTabs[3] = GetNumTalents(3)
 	end
 
-	-- [SAFETY] tTabs doivent être numériques
+	-- [SAFETY] tTabs entries must be numeric
 	tTabs[1] = tonumber(tTabs[1]) or 0
 	tTabs[2] = tonumber(tTabs[2]) or 0
 	tTabs[3] = tonumber(tTabs[3]) or 0
@@ -348,11 +350,11 @@ end
 
 -- New Score formula
 MultiBot.ItemLevel = function(pUnit)
-	-- Calcule un “ilvl moyen” dans l’esprit de GetAverageItemLevel :
-	--  - les slots vides comptent comme ilvl 0 (on divise toujours par 16 ou 17)
-	--  - 2M sans Titan's Grip : 16 slots (pas d’off-hand possible)
-	--  - 1M / 2x1M / 2M avec Titan's Grip : 17 slots (main + off-hand)
-	--  - on garde la même plage de slots que le code d’origine (1..18) et on ignore la chemise.
+	-- Computes an "average ilvl" in the spirit of GetAverageItemLevel:
+	--  - empty slots count as ilvl 0 (we always divide by 16 or 17)
+	--  - 2H without Titan's Grip: 16 slots (no off-hand possible)
+	--  - 1H / dual 1H / 2H with Titan's Grip: 17 slots (main + off-hand)
+	--  - the original slot range (1..18) is kept, and the shirt is ignored.
 
 	local hasTitanGrip = IsSpellKnown and IsSpellKnown(49152) or false
 
@@ -363,14 +365,14 @@ MultiBot.ItemLevel = function(pUnit)
 	local score = 0
 
 	for slot = 1, 18 do
-		-- On ignore la chemise (slot 4)
+		-- Skip the shirt (slot 4)
 		if slot ~= 4 then
 			local link = GetInventoryItemLink(pUnit, slot)
 			if link then
 				local _, _, _, iLevel, _, _, _, _, equipLoc = GetItemInfo(link)
 				iLevel = iLevel or 0
 
-				-- Gestion des slots arme principale / main gauche
+				-- Main-hand / off-hand slot handling
 				if slot == 16 then
 					hasMainHand = true
 					if equipLoc == "INVTYPE_2HWEAPON" then
@@ -385,9 +387,9 @@ MultiBot.ItemLevel = function(pUnit)
 		end
 	end
 
-	-- Nombre de slots "théoriques" comme le client :
-	--  - 16 si 2M sans Titan's Grip
-	--  - 17 dès qu’un off-hand est possible ou présent
+	-- "Theoretical" slot count, the way the client counts it:
+	--  - 16 for a 2H without Titan's Grip
+	--  - 17 as soon as an off-hand is possible or present
 	local count = 16
 	if (hasMainHand and not mainIs2H) or (hasMainHand and hasTitanGrip) or hasOffhand then
 		count = 17
@@ -439,8 +441,8 @@ MultiBot.SpellToMacro = function(pName, pSpell, pTexture)
 	local tSpell = GetMacroInfo(tMacro)
 
 	if(tSpell == nil) then
-		-- Sécurité : si l’icône n’est pas définie dans MultiBot.spellbook.icons,
-		-- on utilise une icône par défaut (index 1).
+		-- Safety: if the icon is not defined in MultiBot.spellbook.icons,
+		-- fall back to the default icon (index 1).
 		local icon = 1
 		if MultiBot.spellbook and MultiBot.spellbook.icons then
 			icon = MultiBot.spellbook.icons[pTexture] or 1
@@ -808,8 +810,8 @@ MultiBot.CollapseOtherUnitBarsForDropdown = function(targetFrame)
 		return
 	end
 
-	-- On ne collapse les autres barres que pour l'ouverture d'un sous-menu
-	-- (pas lors de l'ouverture/fermeture de la barre du bot elle-même).
+	-- Only collapse the other bars when a submenu is opened
+	-- (not when the bot's own bar is opened or closed).
 	if targetFrame == ownerBar then
 		return
 	end
@@ -881,8 +883,8 @@ end
 local _MB_EMPTY_TABLE = {}
 
 -- CLICK BLOCKER --
--- Fond invisible placé sous les barres de boutons (et leurs zones extensibles) afin
--- d'empêcher les clics de "traverser" l'UI dans les espaces entre boutons.
+-- Invisible backdrop placed under the button bars (and their expandable areas) so that
+-- clicks in the gaps between buttons cannot "fall through" the UI.
 
 MultiBot._clickBlockerQueue = _mbEnsureRuntimeTable("_clickBlockerQueue")
 
@@ -917,7 +919,7 @@ local function _mbQueueClickBlockerUpdate(f)
 	end
 end
 
--- Demande une mise à jour pour le frame et tous ses parents MultiBot.newFrame (cascade).
+-- Queue an update for the frame and every MultiBot.newFrame parent above it (cascading).
 function MultiBot.RequestClickBlockerUpdate(frame)
 	local f = frame
 	while(f) do
@@ -926,7 +928,7 @@ function MultiBot.RequestClickBlockerUpdate(frame)
 	end
 end
 
--- Recalcule la zone à bloquer à partir des coordonnées réelles (écran) de tous les boutons visibles.
+-- Recompute the blocked area from the real (screen) coordinates of every visible button.
 function MultiBot.UpdateClickBlocker(frame)
 	local cb = frame and frame.clickBlocker
 	if(not cb) then return end
@@ -1018,7 +1020,7 @@ MultiBot.newFrame = function(pParent, pX, pY, pSize, oWidth, oHeight, oAlign)
 	frame.x = pX
 	frame.y = pY
 
-	-- click blocker: absorbe les clics dans les espaces entre boutons
+	-- click blocker: swallows clicks in the gaps between buttons
 	frame.clickBlocker = CreateFrame("Frame", nil, frame)
 	frame.clickBlocker:SetFrameLevel(frame:GetFrameLevel())
 	frame.clickBlocker:EnableMouse(true)
@@ -1960,10 +1962,10 @@ MultiBot.addFrame = function(pName, pX, pY, pSize)
 end
 
 -- MULTIBOT: SELL ALL BOTS --
--- Envoie une commande de vente à tous les bots listés dans l’onglet "Units".
--- pCommand : "s *" (tout le gris) ou "s vendor" (tout ce qui est vendable).
+-- Sends a sell command to every bot listed in the "Units" tab.
+-- pCommand: "s *" (all greys) or "s vendor" (everything vendorable).
 MultiBot.SellAllBots = function(pCommand)
-	-- Par défaut : vendre tous les objets gris (safe)
+	-- Default: sell all grey items (the safe option)
 	pCommand = pCommand or "s *"
 
 	if not MultiBot.isTarget or not MultiBot.isTarget() then
@@ -2000,7 +2002,7 @@ MultiBot.SellAllBots = function(pCommand)
 		end
 	end
 
-	-- Si une fenêtre d’inventaire est ouverte, on la rafraîchit pour le bot affiché
+	-- If an inventory window is open, refresh it for the bot it shows
 	if MultiBot.inventory and MultiBot.inventory:IsVisible() and MultiBot.RefreshInventory then
 		MultiBot.RefreshInventory(0.5)
 	end
@@ -2009,7 +2011,7 @@ MultiBot.SellAllBots = function(pCommand)
 end
 
 -- MULTIBOT: MAINTENANCE ALL BOTS --
--- Envoie la commande "maintenance" à tous les bots listés dans l’onglet "Units".
+-- Sends the "maintenance" command to every bot listed in the "Units" tab.
 MultiBot.MaintenanceAllBots = function()
 	local frames = MultiBot.frames
 	if not frames then return 0 end
@@ -2040,7 +2042,7 @@ MultiBot.MaintenanceAllBots = function()
 		end
 	end
 
-	-- Si une fenêtre d’inventaire est ouverte, on peut la rafraîchir pour refléter d’éventuels changements
+	-- If an inventory window is open, refresh it so any changes show up
 	if MultiBot.inventory and MultiBot.inventory:IsVisible() and MultiBot.RefreshInventory then
 		MultiBot.RefreshInventory(0.5)
 	end
@@ -2057,7 +2059,7 @@ MultiBot.addSelf = function(pClass, pName)
    btn = units.addButton(pName, 0, 0, "inv_misc_head_clockworkgnome_01", MultiBot.L("tips.unit.selfbot"))
    btn:Hide()
   end
-  -- Assurer la présence dans les index (sans doublons)
+  -- Make sure the name is in the indexes (without duplicates)
   local byClass = _mbEnsureTableField(MultiBot.index.classes.players, tClass, {})
   local found = false
   for i=1,#byClass do if byClass[i] == pName then found = true; break end end
@@ -2087,7 +2089,7 @@ MultiBot.addPlayer = function(pClass, pName)
   else
     if btn.icon and tTexture then btn.icon:SetTexture(MultiBot.SafeTexturePath(tTexture)) end
   end
-  -- Assurer la présence dans les index (sans doublons)
+  -- Make sure the name is in the indexes (without duplicates)
   local byClass = _mbEnsureTableField(MultiBot.index.classes.players, tClass, {})
   local found = false
   for i=1,#byClass do if byClass[i] == pName then found = true; break end end
@@ -2208,9 +2210,9 @@ local function scheduleInventoryRefresh(delay, callback)
 end
 
 -- MULTIBOT:INVENTORY REFRESH --
--- Rafraîchit l’inventaire d’un bot en bridge-first.
--- Le fallback chat legacy est désactivé par défaut ; l’activer explicitement avec
--- MultiBot.allowLegacyChatFallback = true pendant un diagnostic legacy.
+-- Refreshes a bot's inventory, bridge-first.
+-- The legacy chat fallback is off by default; turn it on explicitly with
+-- MultiBot.allowLegacyChatFallback = true while diagnosing the legacy path.
 MultiBot.RequestInventoryRefresh = function(botName, delay, options)
 	botName = botName or (MultiBot.inventory and MultiBot.inventory.name) or ""
 	if not botName or botName == "" then
@@ -2273,8 +2275,8 @@ MultiBot.RequestInventoryPostActionRefresh = function(botName, firstDelay, secon
 	return requested
 end
 
--- Compat ancienne API : garde le comportement fenêtre Inventory,
--- mais son fallback bas niveau passe maintenant par RequestInventoryRefresh.
+-- Legacy API compat: keeps the Inventory-window behaviour, but its low-level
+-- fallback now goes through RequestInventoryRefresh.
 MultiBot.RefreshInventory = function(delay)
 	if MultiBot.inventory and MultiBot.inventory.refresh then
 		return MultiBot.inventory:refresh(delay)

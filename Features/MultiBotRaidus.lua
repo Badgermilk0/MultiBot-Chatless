@@ -11,7 +11,7 @@ local MultiBotRaidusClassWeight = {
     Warrior     = 10,
 }
 
--- Rôle par défaut par classe (fallback si on ne peut pas lire les talents)
+-- Default role per class (fallback when the talents cannot be read)
 local MultiBotRaidusRoleDefaults = {
     DeathKnight = "TANK",
     Druid       = "HEAL",
@@ -25,36 +25,36 @@ local MultiBotRaidusRoleDefaults = {
     Warrior     = "TANK",
 }
 
--- Rôle par classe ET par arbre de talents dominant (index 1 / 2 / 3)
--- L’ordre des arbres est celui du client (1er onglet, 2ème, 3ème) et ne dépend pas de la langue.
+-- Role per class AND per dominant talent tree (index 1 / 2 / 3).
+-- The tree order is the client's own tab order (1st, 2nd, 3rd).
 local MultiBotRaidusRoleByTree = {
-    Paladin     = { "HEAL", "TANK", "DPS" },        -- Sacré, Protection, Vindicte
-    Warrior     = { "DPS",  "DPS",  "TANK" },       -- Armes, Fureur, Protection
-    Druid       = { "DPS",  "TANK", "HEAL" },       -- Equilibre, Farouche, Restauration
-    Priest      = { "HEAL", "HEAL", "DPS" },        -- Discipline, Sacré, Ombre
-    Shaman      = { "DPS",  "DPS",  "HEAL" },       -- Élémentaire, Amélio, Restauration
-    DeathKnight = { "TANK", "TANK", "DPS" },        -- Sang, Givre, Impie (approximation raid)
-    Hunter      = { "DPS",  "DPS",  "DPS" },        -- Maîtrise des bêtes, Précision, Survie
-    Rogue       = { "DPS",  "DPS",  "DPS" },        -- Assassinat, Combat, Finesse
-    Mage        = { "DPS",  "DPS",  "DPS" },        -- Arcanes, Feu, Givre
-    Warlock     = { "DPS",  "DPS",  "DPS" },        -- Affliction, Démonologie, Destruction
+    Paladin     = { "HEAL", "TANK", "DPS" },        -- Holy, Protection, Retribution
+    Warrior     = { "DPS",  "DPS",  "TANK" },       -- Arms, Fury, Protection
+    Druid       = { "DPS",  "TANK", "HEAL" },       -- Balance, Feral, Restoration
+    Priest      = { "HEAL", "HEAL", "DPS" },        -- Discipline, Holy, Shadow
+    Shaman      = { "DPS",  "DPS",  "HEAL" },       -- Elemental, Enhancement, Restoration
+    DeathKnight = { "TANK", "TANK", "DPS" },        -- Blood, Frost, Unholy (raid approximation)
+    Hunter      = { "DPS",  "DPS",  "DPS" },        -- Beast Mastery, Marksmanship, Survival
+    Rogue       = { "DPS",  "DPS",  "DPS" },        -- Assassination, Combat, Subtlety
+    Mage        = { "DPS",  "DPS",  "DPS" },        -- Arcane, Fire, Frost
+    Warlock     = { "DPS",  "DPS",  "DPS" },        -- Affliction, Demonology, Destruction
 }
 
--- Détection de rôle indépendante de la langue :
---  On lit la répartition de talents "x/y/z"
---  On prend l'arbre dominant (1,2,3)
---  On mappe (classe, arbre) -> rôle TANK/HEAL/DPS
---  Fallback sur MultiBotRaidusRoleDefaults
+-- Role detection:
+--  read the "x/y/z" talent split
+--  take the dominant tree (1,2,3)
+--  map (class, tree) -> TANK/HEAL/DPS role
+--  fall back to MultiBotRaidusRoleDefaults
 local function MultiBotRaidusDetectRole(bot)
     if not bot then
         return "DPS"
     end
 
-    -- Classe normalisée (MultiBot.toClass sait déjà gérer les noms de classes localisés)
+    -- Canonical class name (MultiBot.toClass handles the alias forms)
     local class = MultiBot.toClass(bot.class)
     local talents = bot.talents or ""
 
-    -- les talents doivent ressembler à par exemple "54/17/0"
+    -- talents must look like e.g. "54/17/0"
     local t1, t2, t3 = talents:match("^(%d+)%/(%d+)%/(%d+)$")
     t1, t2, t3 = tonumber(t1), tonumber(t2), tonumber(t3)
 
@@ -76,7 +76,7 @@ local function MultiBotRaidusDetectRole(bot)
         end
     end
 
-    -- Si on ne peut pas lire les talents ou que la classe n'est pas mappée on fallback
+    -- Fall back when the talents cannot be read, or the class is not mapped
     local baseRole = MultiBotRaidusRoleDefaults[class]
     if baseRole then
         return baseRole
@@ -85,7 +85,7 @@ local function MultiBotRaidusDetectRole(bot)
     return "DPS"
 end
 
--- Retourne true si le bot (par son nom) est dans ton groupe ou raid
+-- Returns true if the bot (by name) is in your party or raid
 local function MultiBotRaidusIsBotGrouped(name)
     if not name or name == "" then
         return false
@@ -974,16 +974,16 @@ local function updateRaidusSortButtonsVisual(activeSortName)
     styleRaidusSortButtonVisual(sortButtons["Class"], activeSortName == "Class")
 end
 
--- Contrôle du mode Tri, "Score / Level / Class"
-local sortBaseX   = -300 + RAIDUS_SORT_SHIFT_X -- position du bouton "Score", pour déplacer tout le groupe il faut modifier cette valeur
+-- Sort mode control, "Score / Level / Class"
+local sortBaseX   = -300 + RAIDUS_SORT_SHIFT_X -- "Score" button position; change this to move the whole button group
 local sortY       = RAIDUS_ACTION_BAR_Y
-local sortSpacing = 6    -- espace entre les boutons
+local sortSpacing = 6    -- gap between the buttons
 
 local scoreWidth  = 60
 local levelWidth  = 60
 local classWidth  = 60
 
--- Bouton "Score"
+-- "Score" button
 local btnScore = MultiBot.raidus.wowButton("Score", sortBaseX, sortY, scoreWidth, 20, 12)
 btnScore.setEnable()
 updateRaidusSortButtonsVisual("Score")
@@ -1009,7 +1009,7 @@ btnScore.doLeft = function(pButton)
     MultiBot.raidus.setRaidus()
 end
 
--- Bouton "Level"
+-- "Level" button
 local btnLevel = MultiBot.raidus.wowButton(
     "Level",
     sortBaseX + scoreWidth + sortSpacing,
@@ -1041,7 +1041,7 @@ btnLevel.doLeft = function(pButton)
     MultiBot.raidus.setRaidus()
 end
 
--- Bouton "Class"
+-- "Class" button
 local btnClass = MultiBot.raidus.wowButton(
     "Class",
     sortBaseX + scoreWidth + sortSpacing + levelWidth + sortSpacing,
@@ -1175,9 +1175,9 @@ btnApply.doLeft = function(pButton)
 end
 
 
--- Bouton Auto-balance raid :
--- Clic gauche  : équilibrage simple par score
--- Clic droit   : équilibrage avancé Tank / Heal / DPS
+-- Raid auto-balance button:
+-- Left click : simple balance by score
+-- Right click: advanced Tank / Heal / DPS balance
 local btnAuto = styleRaidusActionButton(MultiBot.raidus.wowButton("Auto", -431 + RAIDUS_ACTION_SHIFT_X, RAIDUS_ACTION_BAR_Y, 80, 20, 12), true)
 
 btnAuto:SetScript("OnEnter", function(self)
@@ -1189,12 +1189,12 @@ btnAuto:SetScript("OnLeave", function()
     GameTooltip:Hide()
 end)
 
--- Clic gauche : simple, on répartit les bots par score le plus équilibré possible
+-- Left click: simple, spread the bots by score as evenly as possible
 btnAuto.doLeft = function(pButton)
     MultiBot.raidus.autoBalanceRaid("score")
 end
 
--- Clic droit : mode avancé Tank / Heal / DPS
+-- Right click: advanced Tank / Heal / DPS mode
 btnAuto.doRight = function(pButton)
     MultiBot.raidus.autoBalanceRaid("role")
 end
@@ -1310,7 +1310,7 @@ MultiBot.raidus.setRaidus = function()
 	for k,v in pairs(tPool.frames) do v:Hide() end
 
 	local tBots = {}
-	-- Mode de tri actuel ("Score", "Level", "Class")
+	-- Current sort mode ("Score", "Level", "Class")
 	local sortMode = MultiBot.raidus.sortMode or "Score"
 
     for tName, tValue in pairs(getRaidusGlobalBotStore()) do
@@ -1321,18 +1321,18 @@ MultiBot.raidus.setRaidus = function()
 			local botLevel   = tBot.level or 0
 			local botScore   = tBot.score or 0
 
-			-- Tri Score / Level / Class
+			-- Score / Level / Class sort
 			if sortMode == "Score" then
-				-- Score desc, puis niveau desc, puis classe
+				-- Score desc, then level desc, then class
 				tBot.sort = botScore * 1000000 + botLevel * 1000 + classWeight
 			elseif sortMode == "Level" then
-				-- Niveau desc, puis score desc, puis classe
+				-- Level desc, then score desc, then class
 				tBot.sort = botLevel * 1000000 + botScore * 1000 + classWeight
 			elseif sortMode == "Class" then
-				-- Classe (ordre fixe), puis niveau desc, puis score desc
+				-- Class (fixed order), then level desc, then score desc
 				tBot.sort = classWeight * 1000000 + botLevel * 1000 + botScore
 			else
-				-- fallback : tri par score
+				-- fallback: sort by score
 				tBot.sort = botScore * 1000000 + botLevel * 1000 + classWeight
 			end
 
@@ -1403,8 +1403,8 @@ MultiBot.raidus.setRaidus = function()
 			pButton.tip:Show()
 		end)
 
-        -- Clic gauche : drag & drop dans les groupes
-        -- Clic droit  : connecte / déconnecte le bot (add/remove)
+        -- Left click : drag & drop between groups
+        -- Right click: connect / disconnect the bot (add/remove)
         tButton:SetScript("OnMouseDown", function(pButton, button)
             if button == "LeftButton" then
                 pButton.parent:StartMoving()
@@ -1414,7 +1414,7 @@ MultiBot.raidus.setRaidus = function()
 
         tButton:SetScript("OnMouseUp", function(pButton, button)
             if button == "LeftButton" then
-                -- Drag & drop (inchangé)
+                -- Drag & drop (unchanged)
                 pButton.parent:StopMovingOrSizing()
                 pButton.parent.isMoving = false
 
@@ -1472,11 +1472,11 @@ MultiBot.raidus.setRaidus = function()
                 end
 
                 if MultiBotRaidusIsBotGrouped(name) then
-                    -- Bot déjà dans le groupe/raid :
-                    -- on laisse le core playerbots gérer leave + logout
+                    -- Bot already in the party/raid:
+                    -- let the playerbots core handle leave + logout
                     SendChatMessage(".playerbot bot remove " .. name, "SAY")
                 else
-                    -- Bot pas dans le groupe/raid :
+                    -- Bot not in the party/raid:
                     -- login + invite via playerbots
                     SendChatMessage(".playerbot bot add " .. name, "SAY")
                 end
@@ -1742,9 +1742,9 @@ end
 --  AUTO BALANCE RAID
 -- ---------------------------------------------------------------------------
 
--- Récupère la liste des bots candidats à l'auto-balance.
--- On prend d'abord les bots cochés dans MultiBar -> Units
--- Si aucun n'est coché, on prend tous les bots connus dans MultiBotGlobalSave
+-- Collects the bots eligible for auto-balance.
+-- Prefers the bots ticked in MultiBar -> Units;
+-- if none are ticked, takes every bot known in MultiBotGlobalSave.
 local function MultiBotRaidusCollectSelectedBots()
     local bots = {}
 
@@ -1762,7 +1762,7 @@ local function MultiBotRaidusCollectSelectedBots()
         end
     end
 
-    -- Fallback : aucun bot sélectionné = on prend tout le monde
+    -- Fallback: no bot selected means take everyone
     if #bots == 0 then
         for name, value in pairs(globalBots) do
             appendRaidusBotIfValid(bots, name, value)
@@ -1772,7 +1772,7 @@ local function MultiBotRaidusCollectSelectedBots()
     return bots
 end
 
--- Tri générique par score décroissant puis niveau décroissant
+-- Generic sort by descending score, then descending level
 local function MultiBotRaidusSortByScore(list)
     table.sort(list, function(a, b)
         local sa = a.score or 0
@@ -1797,11 +1797,11 @@ local function createEmptyRaidusLayout()
     return layout
 end
 
--- Auto balance :
---   mode == "score" : simple équilibrage par score
---   mode == "role"  : Tank / Heal / DPS
+-- Auto balance:
+--   mode == "score": simple balance by score
+--   mode == "role" : Tank / Heal / DPS
 MultiBot.raidus.autoBalanceRaid = function(mode)
-    -- On repart d'un état propre : pool reconstruite, groupes vidés
+    -- Start from a clean state: pool rebuilt, groups emptied
     if MultiBot.raidus.setRaidus then
         MultiBot.raidus.setRaidus()
     end
@@ -1819,11 +1819,11 @@ MultiBot.raidus.autoBalanceRaid = function(mode)
         return
     end
 
-    -- Matrice [groupe][slot] initialisée à "-"
+    -- [group][slot] matrix initialised to "-"
     local layout = createEmptyRaidusLayout()
 
     if mode == "role" then
-        -- Mode avancé Tank / Heal / DPS
+        -- Advanced Tank / Heal / DPS mode
         local tanks = {}
         local heals = {}
         local dps = {}
@@ -1874,12 +1874,12 @@ MultiBot.raidus.autoBalanceRaid = function(mode)
             end
         end
 
-        -- On commence par répartir les tanks, puis les heals, puis le reste
+        -- Place the tanks first, then the healers, then the rest
         placeListRoundRobin(tanks)
         placeListRoundRobin(heals)
         placeListRoundRobin(dps)
     else
-        -- Mode score simple par défaut
+        -- Simple score mode (the default)
         MultiBotRaidusSortByScore(bots)
 
         for index, bot in ipairs(bots) do

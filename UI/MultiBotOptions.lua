@@ -232,8 +232,8 @@ local function buildLegacyOptionsContent(panel)
 
   local chkLootMasterUI = CreateFrame("CheckButton", "MultiBot_LootMasterUICheck", scrollChild, "InterfaceOptionsCheckButtonTemplate")
   chkLootMasterUI:SetPoint("TOPLEFT", chkDisableAutoCollapse, "BOTTOMLEFT", 0, -8)
-  _G[chkLootMasterUI:GetName() .. "Text"]:SetText(optLF("options.lootmaster.enable", "Activer la fenêtre de loot"))
-  chkLootMasterUI.tooltipText = optLF("options.lootmaster.enable_desc", "Affiche automatiquement la fenêtre MultiBot de responsable du butin pendant les loots.")
+  _G[chkLootMasterUI:GetName() .. "Text"]:SetText(optLF("options.lootmaster.enable", "Enable loot window"))
+  chkLootMasterUI.tooltipText = optLF("options.lootmaster.enable_desc", "Automatically shows the MultiBot loot master window during looting.")
   chkLootMasterUI:SetChecked(lootMasterUIEnabled and true or false)
   chkLootMasterUI:SetScript("OnClick", function(btn)
     local enabled = btn:GetChecked() and true or false

@@ -67,7 +67,7 @@ MultiBot.addPriest = function(pFrame, pCombat, pNormal)
 	end
 
    -- SHADOW RESISTANCE --
-   -- (Expose 'rshadow' pour Shadow Protection)
+   -- (exposes 'rshadow' for Shadow Protection)
    playbookFrame.addButton("ShadowRes", 0, 128, "spell_shadow_antishadow", MultiBot.L("tips.priest.playbook.rshadow")).setDisable()
    .doLeft = function(pButton)
        MultiBot.OnOffActionToTarget(pButton, "co +rshadow,?", "co -rshadow,?", pButton.getName())

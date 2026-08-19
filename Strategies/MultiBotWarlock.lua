@@ -49,7 +49,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
 		end
 	end]]--
 
-    -- BUFF — non supporté pour Warlock bouton placeholder désactivé
+    -- BUFF - not supported for Warlock; disabled placeholder button
     local btnBuff = pFrame.addButton(
         "Buff", 0, 0, "spell_shadow_lifedrain02",
          (MultiBot.L("tips.warlock.buff.master") ~= "tips.warlock.buff.master" and MultiBot.L("tips.warlock.buff.master") or "Buffs")
@@ -58,9 +58,11 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
     btnBuff.setDisable()
     btnBuff.doLeft = function() end
 
-    -- Helper commun pour (dé)saturer les icônes (réutilisé par pierres / pets / malédictions)
-    local _MB_setDesat = _MB_setDesat
-    if not _MB_setDesat then
+    -- Shared helper to (de)saturate icons (reused by stones / pets / curses)
+    -- Was `local _MB_setDesat = _MB_setDesat` guarded by `if not _MB_setDesat`: the right-hand
+    -- side read a global that never existed, so the guard was always true. Declared plainly.
+    local _MB_setDesat
+    do
         local function __getIcon(btn)
             if not btn then return nil end
             if btn.icon and btn.icon.GetObjectType and btn.icon:GetObjectType() == "Texture" then
@@ -100,7 +102,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
             end
         end
 
-        function _MB_setDesat(btn, isDesat)
+        _MB_setDesat = function(btn, isDesat)
             local tex = __getIcon(btn)
             __apply(tex, isDesat)
             if btn and btn.GetNormalTexture then
@@ -185,9 +187,9 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
 	end
 	UpdateStoneIcons(fStones.activeStone)
 	fStones:SetScript("OnShow", function(self) UpdateStoneIcons(self.activeStone) end)
-	-- FIN STONES --
+	-- END STONES --
 
-	-- SOULSTONES (stratégies) --
+	-- SOULSTONES (strategies) --
 	local btnSoulstones = pFrame.addButton("SoulstonesSelect", -180, 0,
 		"inv_misc_orb_04",
 		MultiBot.L("tips.warlock.soulstones.masterbutton"))
@@ -398,7 +400,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
 		end
 	end
 
-    -- META MELEE (Démonologie) --
+    -- META MELEE (Demonology) --
     local btnMeta = tFrame.addButton(
       "MetaMelee", 0, 105, "Spell_Shadow_DemonForm",
       (MultiBot.L("tips.warlock.dps.metamelee") ~= "tips.warlock.dps.metamelee" and MultiBot.L("tips.warlock.dps.metamelee") or "Meta Melee")
@@ -538,7 +540,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
     if(MultiBot.isInside(pCombat, "tank")) then pFrame.getButton("Tank").setEnable() end
     if(MultiBot.isInside(pCombat, "meta melee")) then pFrame.getButton("MetaMelee").setEnable() end
 
-    -- parent buttons des menus)
+    -- menu parent buttons
     if fCurses   and fCurses.activeCurse then   pFrame.getButton("CursesSelect").setEnable()   end
     if fStones   and fStones.activeStone then   pFrame.getButton("StonesSelect").setEnable()   end
     if fSoul     and fSoul.activeSS then        pFrame.getButton("SoulstonesSelect").setEnable() end

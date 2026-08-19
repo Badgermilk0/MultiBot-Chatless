@@ -20,12 +20,20 @@ local RTSC_SLOT_COUNT = 9
 -- the server state any sooner just returns the pre-cast snapshot.
 local RTSC_CAST_SETTLE = 1.5
 
+-- A raid holds eight subgroups, and playerbots' `@group<n>` filter reads `GetSubGroup() + 1` with
+-- no upper bound (SubGroupChatFilter), so all eight have always been addressable - the bar just
+-- never drew the last three. `Icons/` only ships art for 1-5, so 6-8 reuse the generic RTSC icon
+-- and carry their number on the face (`label`), the way the nine location slots do. Dropping
+-- matching `rtsc_group<n>.blp` files in and clearing `label` is all it takes to give them art.
 local RTSC_GROUP_BUTTONS = {
     { tag = "@group1", x = 30, icon = "Interface\\AddOns\\MultiBot\\Icons\\rtsc_group1.blp", tip = "tips.rtsc.group1", hidden = true, disabled = true },
     { tag = "@group2", x = 60, icon = "Interface\\AddOns\\MultiBot\\Icons\\rtsc_group2.blp", tip = "tips.rtsc.group2", hidden = true, disabled = true },
     { tag = "@group3", x = 90, icon = "Interface\\AddOns\\MultiBot\\Icons\\rtsc_group3.blp", tip = "tips.rtsc.group3", hidden = true, disabled = true },
     { tag = "@group4", x = 120, icon = "Interface\\AddOns\\MultiBot\\Icons\\rtsc_group4.blp", tip = "tips.rtsc.group4", hidden = true, disabled = true },
     { tag = "@group5", x = 150, icon = "Interface\\AddOns\\MultiBot\\Icons\\rtsc_group5.blp", tip = "tips.rtsc.group5", hidden = true, disabled = true },
+    { tag = "@group6", x = 180, icon = "Interface\\AddOns\\MultiBot\\Icons\\rtsc.blp", tip = "tips.rtsc.group6", hidden = true, disabled = true, label = "6" },
+    { tag = "@group7", x = 210, icon = "Interface\\AddOns\\MultiBot\\Icons\\rtsc.blp", tip = "tips.rtsc.group7", hidden = true, disabled = true, label = "7" },
+    { tag = "@group8", x = 240, icon = "Interface\\AddOns\\MultiBot\\Icons\\rtsc.blp", tip = "tips.rtsc.group8", hidden = true, disabled = true, label = "8" },
 }
 
 local RTSC_ROLE_BUTTONS = {
@@ -41,7 +49,9 @@ local RTSC_ROLE_BUTTONS = {
 -- Browse swaps the whole role row for the group row, so it has to list every role button or the
 -- ones it forgets stay on screen underneath the groups.
 local RTSC_BROWSE_ROLES = { "@dps", "@tank", "@melee", "@healer", "@ranged", "@meleedps", "@rangeddps" }
-local RTSC_BROWSE_GROUPS = { "@group1", "@group2", "@group3", "@group4", "@group5" }
+local RTSC_BROWSE_GROUPS = {
+    "@group1", "@group2", "@group3", "@group4", "@group5", "@group6", "@group7", "@group8",
+}
 
 -- Every tag that can take part in a selection, so the lit state can be repainted as a whole set
 -- instead of button by button.
@@ -62,10 +72,14 @@ local rtscUI = nil
 local castButtons = {}
 local lastReportedAt = {}
 local rtscStateRetries = 0
--- A slot the master has just confirmably saved into, shown as filled until the authoritative
--- GET~RTSC lands ~1.5s later. UNIT_SPELLCAST_SUCCEEDED is proof the cast happened, so this cannot
--- light a slot for a reticle the user escaped.
+-- Slots the master has just confirmably saved into / emptied, shown that way until the
+-- authoritative GET~RTSC has caught up. A cast event is proof the cast happened, so these cannot
+-- light a slot for a reticle the user escaped. Each entry stores *when* it was made: `save`,
+-- `save here` and `unsave` all reach the bots through their command queue, so a state read that
+-- answers before they applied it still describes the old world, and repainting from it is what
+-- made a stored or deleted spot look like it had not registered until some later click.
 local pendingSlotFill = {}
+local pendingSlotClear = {}
 -- What this bar last armed ("save <n>" or "move"). Tracked here rather than read back from the
 -- server snapshot, which is up to a refresh behind at the moment the cast lands.
 local armedAction = nil
@@ -83,6 +97,7 @@ local expectedSelection = nil
 local captureSelection = false
 local verifySelection = false
 local selectionRepairs = 0
+local rtscPollArmed = false
 
 local RTSC_STATE_RETRY_LIMIT = 5
 local RTSC_STATE_RETRY_DELAY = 0.75
@@ -94,6 +109,12 @@ local RTSC_REPORT_INTERVAL = 8
 -- of the settle read's way.
 local RTSC_MARQUEE_SETTLE = RTSC_CAST_SETTLE + 0.25
 local RTSC_SELECTION_REPAIR_LIMIT = 2
+-- Outlives the post-action read by a margin: that read is the one most likely to be a hair early.
+local RTSC_PENDING_TTL = RTSC_CAST_SETTLE + 1
+-- Backstop read while the bar is open. Everything else here repaints from a click or a cast, so
+-- state the master never asked for - the rubber-band selection a plain cast performs, a command
+-- that landed late, a bot that relogged - had no way onto the screen until the next click.
+local RTSC_POLL_INTERVAL = 5
 
 local function L(key, fallback)
     if MultiBot and type(MultiBot.L) == "function" then
@@ -147,6 +168,10 @@ end
 
 local function slotIsFilled(index)
     local key = tostring(index)
+
+    if pendingSlotClear[key] then
+        return false
+    end
 
     if pendingSlotFill[key] then
         return true
@@ -251,6 +276,38 @@ end
 
 local function rtscNow()
     return (type(GetTime) == "function") and GetTime() or 0
+end
+
+-- Optimistic paint for a slot the bar just changed, held for RTSC_PENDING_TTL so the state read
+-- that follows the action (which can still answer from before the bots applied it) cannot flip it
+-- back. The next read after that reconciles it with the truth.
+local function markSlotPending(index, filled)
+    local key = tostring(index)
+    local now = rtscNow()
+
+    if filled then
+        pendingSlotFill[key] = now
+        pendingSlotClear[key] = nil
+    else
+        pendingSlotClear[key] = now
+        pendingSlotFill[key] = nil
+    end
+end
+
+local function expirePendingSlots()
+    local now = rtscNow()
+
+    for key, stamp in pairs(pendingSlotFill) do
+        if (now - (stamp or 0)) >= RTSC_PENDING_TTL then
+            pendingSlotFill[key] = nil
+        end
+    end
+
+    for key, stamp in pairs(pendingSlotClear) do
+        if (now - (stamp or 0)) >= RTSC_PENDING_TTL then
+            pendingSlotClear[key] = nil
+        end
+    end
 end
 
 local function rtscMessage(text)
@@ -481,9 +538,10 @@ end
 
 -- Called by MultiBotComm once a GET~RTSC stream completes.
 MultiBot.OnBridgeRtscState = function()
-    -- The server has spoken; drop the optimistic fills so a save that never landed goes back to
-    -- showing empty instead of lying.
-    pendingSlotFill = {}
+    -- The server has spoken; drop the optimistic marks it has had time to account for, so a save
+    -- that never landed goes back to showing empty instead of lying. Marks younger than that are
+    -- kept: this state can predate the command that made them (see markSlotPending).
+    expirePendingSlots()
 
     if captureSelection then
         -- A deliberate selection change has settled: record who it actually reached, so a later
@@ -620,7 +678,7 @@ local function onAedmCast()
     if savedSlot then
         -- Show it immediately. Playerbots consumes the armed save on this cast (it resets
         -- "RTSC next spell action"), so the bar must stop advertising it as armed too.
-        pendingSlotFill[savedSlot] = true
+        markSlotPending(savedSlot, true)
         armedAction = nil
         refreshSlotButtons()
     elseif armed ~= "move" then
@@ -638,7 +696,33 @@ local function onAedmCast()
     refreshRtscStateSoon(true)
 end
 
+-- The bots act on the master's *outgoing* cast packet: SeeSpellAction is driven by the marker
+-- spell's CMSG_CAST_SPELL, not by the server confirming anything back. So a cast can do its whole
+-- job on the bots while UNIT_SPELLCAST_SUCCEEDED - which needs the server to report the cast -
+-- never arrives, and hanging every post-cast repaint off that one event is why a stored spot could
+-- stay grey and the selection badge stay empty after a plain send, until an unrelated click
+-- refreshed the bar. UNIT_SPELLCAST_SENT fires when the client transmits that packet (for a
+-- ground-targeted spell, on the terrain click), so it is the signal that always accompanies a real
+-- RTSC cast - but it says nothing about the server having accepted it, so it is used only as a
+-- fallback: SUCCEEDED keeps the job whenever it does arrive, and the deferred SENT handler stands
+-- down when it sees that it did.
+local RTSC_CAST_DEDUPE = 0.5
+local RTSC_CAST_FALLBACK = 1
+local lastCastHandledAt = nil
+
+local function handleAedmCast()
+    local now = rtscNow()
+
+    if lastCastHandledAt and (now - lastCastHandledAt) < RTSC_CAST_DEDUPE then
+        return
+    end
+
+    lastCastHandledAt = now
+    onAedmCast()
+end
+
 local castWatcher = CreateFrame("Frame")
+castWatcher:RegisterEvent("UNIT_SPELLCAST_SENT")
 castWatcher:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 castWatcher:RegisterEvent("SPELLS_CHANGED")
 castWatcher:SetScript("OnEvent", function(_, eventName, unit, spellName, _, _, spellId)
@@ -651,11 +735,32 @@ castWatcher:SetScript("OnEvent", function(_, eventName, unit, spellName, _, _, s
         return
     end
 
+    -- UNIT_SPELLCAST_SENT carries no spell id (its 4th argument is the target name), so the name
+    -- is all it can be matched on - which is safe here, since it comes from the same client
+    -- Spell.dbc entry aedmName() reads.
     if spellName ~= aedmName() and tonumber(spellId) ~= RTSC_SPELL_ID then
         return
     end
 
-    onAedmCast()
+    if eventName ~= "UNIT_SPELLCAST_SENT" then
+        handleAedmCast()
+        return
+    end
+
+    if type(MultiBot.TimerAfter) ~= "function" then
+        handleAedmCast()
+        return
+    end
+
+    local sentAt = rtscNow()
+    MultiBot.TimerAfter(RTSC_CAST_FALLBACK, function()
+        -- SUCCEEDED handled this cast already; nothing to fall back to.
+        if lastCastHandledAt and lastCastHandledAt >= sentAt then
+            return
+        end
+
+        handleAedmCast()
+    end)
 end)
 
 -- SELECTION -------------------------------------------------------------------------------------
@@ -830,6 +935,16 @@ local function createSelectorButton(selectorFrame, definition)
         button.setDisable()
     end
 
+    -- Same reasoning as the numbered location slots: a shared icon with nothing on the face is
+    -- unreadable. setDisable() desaturates the icon only, so the digit stays legible either way.
+    if definition.label then
+        button.setAmount(definition.label)
+
+        if button.amount and button.amount.SetTextColor then
+            button.amount:SetTextColor(1, 0.82, 0)
+        end
+    end
+
     -- Right = add this role/group to the selection, or drop it if it is already in.
     button.doRight = function(owner)
         toggleSelection(owner.parent, definition.tag)
@@ -875,7 +990,7 @@ local function createStoragePair(selectorFrame, index)
         if IsShiftKeyDown() then
             -- Stores immediately, no cast involved, so the slot can be shown as filled right away.
             button.parent.doExecute(button, "save here " .. index)
-            pendingSlotFill[tostring(index)] = true
+            markSlotPending(index, true)
             refreshSlotButtons()
             refreshRtscStateSoon(false)
             return
@@ -895,6 +1010,9 @@ local function createStoragePair(selectorFrame, index)
         -- Without the bridge there is no way to learn whether the cast ever happened, so keep the
         -- old optimistic flip; with it, the cast watcher fills the slot once the cast is confirmed.
         if not bridgeRtsc() then
+            -- No bridge means no state read to expire an earlier optimistic "emptied" mark, so
+            -- drop it here or an unsaved-then-saved slot would stay grey for the session.
+            pendingSlotClear[tostring(index)] = nil
             localSlots[tostring(index)] = true
             refreshSlotButtons()
         end
@@ -909,12 +1027,16 @@ local function createStoragePair(selectorFrame, index)
     slotButton.doRight = function()
         sendRtsc("unsave " .. index)
         localSlots[tostring(index)] = nil
-        pendingSlotFill[tostring(index)] = nil
+
+        -- `unsave` reaches the bots through their command queue, so a state read fired right here
+        -- answers from before they applied it and paints the spot as still stored - the delete
+        -- then only appeared to take effect on whatever click refreshed the bar next. Show it
+        -- empty at once and read back once the bots have had the settle window.
+        markSlotPending(index, false)
+        refreshSlotButtons()
 
         if bridgeRtsc() then
-            requestRtscState()
-        else
-            refreshSlotButtons()
+            refreshRtscStateSoon(false)
         end
     end
 
@@ -986,7 +1108,7 @@ local function bindSelectorLogic(selectorFrame)
 end
 
 local function createBrowseButton(selectorFrame)
-    local browseButton = selectorFrame.addButton("Browse", 270, 0, "Interface\\AddOns\\MultiBot\\Icons\\rtsc_browse.blp", MultiBot.L("tips.rtsc.browse"))
+    local browseButton = selectorFrame.addButton("Browse", 300, 0, "Interface\\AddOns\\MultiBot\\Icons\\rtsc_browse.blp", MultiBot.L("tips.rtsc.browse"))
 
     -- `state` belongs to the engine (it drives setEnable/setDisable and the desaturation), so the
     -- "which row am I showing" flag gets its own field. Writing state raw meant the button's look
@@ -1048,7 +1170,7 @@ end
 -- Move / Last / Here sit right of Browse so the existing -274..270 layout is untouched.
 local function createModeButtons(selectorFrame)
     local moveButton = addAedmMacro(selectorFrame
-        .addButton("Move", 300, 0, "ability_rogue_sprint",
+        .addButton("Move", 330, 0, "ability_rogue_sprint",
             L("tips.rtsc.move", "RTSC Move Mode\n\nLeft-click to arm move mode and place a marker: from then on every AEDM cast moves your selection, with no further commands.\nRight-click to disarm."),
             "SecureActionButtonTemplate"))
         .setDisable()
@@ -1066,7 +1188,7 @@ local function createModeButtons(selectorFrame)
     end
 
     local lastButton = selectorFrame
-        .addButton("Last", 330, 0, "Interface\\AddOns\\MultiBot\\Icons\\rtsc_target.blp",
+        .addButton("Last", 360, 0, "Interface\\AddOns\\MultiBot\\Icons\\rtsc_target.blp",
             L("tips.rtsc.last", "Last Marker\n\nSend the selection back to the most recently marked spot, in formation.\nRight-click to re-read the saved spots from the server."))
 
     lastButton.doLeft = function(button)
@@ -1079,7 +1201,7 @@ local function createModeButtons(selectorFrame)
     end
 
     local hereButton = selectorFrame
-        .addButton("Here", 360, 0, "spell_arcane_blink",
+        .addButton("Here", 390, 0, "spell_arcane_blink",
             L("tips.rtsc.here", "Regroup On Me\n\nSend everyone to your exact position, in formation - no marker cast needed.\nRequires the MultiBot bridge."))
 
     -- "here" seeds the click position natively, before playerbots' chat filters run, so it cannot
@@ -1090,6 +1212,44 @@ local function createModeButtons(selectorFrame)
     end
 
     return moveButton, lastButton, hereButton
+end
+
+-- Slow backstop read while the row is open. Every other refresh here is hung off a click or a
+-- cast event, so anything that changes the server state without one - the rubber-band selection a
+-- plain cast performs, a command that landed after its post-action read, a bot that relogged -
+-- stayed invisible until the next click happened to refresh the bar. One read every few seconds
+-- costs a single GET~RTSC and keeps the slot faces and the count badge honest on their own.
+local schedulePoll
+
+local function pollRtscState()
+    rtscPollArmed = false
+
+    local frame = rtscUI and rtscUI.frame
+    if not frame or not frame:IsShown() then
+        return
+    end
+
+    -- A deliberate read is outstanding and OnBridgeRtscState consumes the next state that lands as
+    -- its answer; a poll landing first would hand it the pre-change snapshot.
+    if not (captureSelection or verifySelection) then
+        requestRtscState()
+    end
+
+    schedulePoll()
+end
+
+schedulePoll = function()
+    if rtscPollArmed or type(MultiBot.TimerAfter) ~= "function" then
+        return
+    end
+
+    local frame = rtscUI and rtscUI.frame
+    if not frame or not frame:IsShown() then
+        return
+    end
+
+    rtscPollArmed = true
+    MultiBot.TimerAfter(RTSC_POLL_INTERVAL, pollRtscState)
 end
 
 -- Opening the bar trains the master's aedm spell (playerbots' bare `rtsc`) and pulls the real
@@ -1106,6 +1266,9 @@ function MultiBot.RTSCOnPanelOpen()
     applySelectionLock(frame and frame.selector ~= "", true)
 
     refreshRtscUI()
+    -- Self-terminates on the first tick that finds the row hidden, so closing the bar needs no
+    -- teardown of its own.
+    schedulePoll()
 end
 
 -- Closing must NOT send `rtsc reset`: that wipes every saved location on every bot and untrains the
@@ -1139,14 +1302,14 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
         if IsShiftKeyDown() then
             sendRtsc("reset")
             armedAction = nil
-            pendingSlotFill = {}
             for index = 1, RTSC_SLOT_COUNT do
                 localSlots[tostring(index)] = nil
+                markSlotPending(index, false)
             end
 
             clearSelection(button.parent.frames[RTSC_SELECTOR_NAME], false)
-            requestRtscState()
             refreshRtscUI()
+            refreshRtscStateSoon(false)
             return
         end
 
@@ -1183,8 +1346,11 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
         createSelectorButton(selectorFrame, definition)
     end
 
+    -- 270, not 240: the group row runs to 240 now (eight subgroups) and @all stays visible while
+    -- Browse shows it. With the role row up, the freed 240 slot reads as a gap between the tag
+    -- buttons and @all, which is no bad thing.
     local allButton = addAedmMacro(selectorFrame
-        .addButton("@all", 240, 0, "Interface\\AddOns\\MultiBot\\Icons\\rtsc.blp", MultiBot.L("tips.rtsc.all"), "SecureActionButtonTemplate"))
+        .addButton("@all", 270, 0, "Interface\\AddOns\\MultiBot\\Icons\\rtsc.blp", MultiBot.L("tips.rtsc.all"), "SecureActionButtonTemplate"))
 
     -- Untagged `select` already reaches every bot, so there is nothing to clear first; dropping
     -- the role scoping is what makes the bar agree that "all" is now the scope. Left and right
@@ -1211,9 +1377,9 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
 
     -- Buttons are 28 wide on a 30 pitch, so the only real gap is between the last spot slot
     -- (right edge -34) and the first selector icon (left edge +2); the second hairline goes in the
-    -- 2px gap between Browse (270) and Move (300).
+    -- 2px gap between Browse (300) and Move (330).
     createSeparator(selectorFrame, -16)
-    createSeparator(selectorFrame, 271)
+    createSeparator(selectorFrame, 301)
 
     rtscUI = {
         frame = rtscFrame,

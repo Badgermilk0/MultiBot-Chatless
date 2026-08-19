@@ -349,9 +349,18 @@ local function sendAll(method)
     clearTableInPlace(awaitingBots)
 
     if method == "GROUP" then
-        for index = 1, GetNumPartyMembers() do
-            local botName = UnitName("party" .. index)
-            if botName then
+        -- ActionToGroup broadcasts to RAID when you are in one, but GetNumPartyMembers()
+        -- is 0 in a raid on 3.3.5a — enumerating only the party left awaitingBots empty and
+        -- the aggregation never completed for raid groups.
+        local unitPrefix, groupCount = "party", GetNumPartyMembers()
+        if GetNumRaidMembers() > 0 then
+            unitPrefix, groupCount = "raid", GetNumRaidMembers()
+        end
+
+        local selfName = UnitName("player")
+        for index = 1, groupCount do
+            local botName = UnitName(unitPrefix .. index)
+            if botName and botName ~= selfName then
                 awaitingBots[botName] = false
             end
         end
@@ -467,10 +476,10 @@ function MultiBot.InitializeQuestsMenu(tRight)
     gobSearchButton:doHide()
     registerExpandableGroup(gobButton, gobNameButton, gobSearchButton)
     gobNameButton.doLeft = function()
-        if not ShowPrompt then
+        if type(MultiBot.ShowPrompt) ~= "function" then
             return
         end
-        ShowPrompt(MultiBot.L("tips.quests.gobpromptname"), function(gobName)
+        MultiBot.ShowPrompt(MultiBot.L("tips.quests.gobpromptname"), function(gobName)
             local normalized = tostring(gobName or ""):gsub("^%s+", ""):gsub("%s+$", "")
             if normalized == "" then
                 UIErrorsFrame:AddMessage(MultiBot.L("tips.quests.goberrorname"), 1, 0.2, 0.2, 1)

@@ -2,8 +2,8 @@ if not MultiBot then return end
 
 local GENDER_BUTTONS = {
     { label = "Male", gender = "male", icon = "Interface\\Icons\\INV_Misc_Toy_02", tip = "tips.creator.gendermale" },
-    { label = "Femelle", gender = "female", icon = "Interface\\Icons\\INV_Misc_Toy_04", tip = "tips.creator.genderfemale" },
-    { label = "Aléatoire", gender = nil, icon = "Interface\\Buttons\\UI-GroupLoot-Dice-Up", tip = "tips.creator.genderrandom" },
+    { label = "Female", gender = "female", icon = "Interface\\Icons\\INV_Misc_Toy_04", tip = "tips.creator.genderfemale" },
+    { label = "Random", gender = nil, icon = "Interface\\Buttons\\UI-GroupLoot-Dice-Up", tip = "tips.creator.genderrandom" },
 }
 
 local CLASS_BUTTONS = {

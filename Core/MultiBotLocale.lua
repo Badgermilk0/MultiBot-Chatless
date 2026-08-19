@@ -1,3 +1,6 @@
+-- String table for the addon. This build ships English only: Locales/MultiBotAceLocale-enUS.lua
+-- is the single locale file and registers itself as the AceLocale default, so every client
+-- locale resolves to it. Add new strings there, never hardcoded in the UI files.
 MultiBot = MultiBot or {}
 
 local aceLocale = LibStub and LibStub("AceLocale-3.0", true)
@@ -42,13 +45,7 @@ function MultiBot.RegisterLocaleStrings(locale, values, isDefault)
 
   local localeTable = aceLocale:NewLocale(LOCALE_NAMESPACE, locale, isDefault)
   if not localeTable then
-    local currentLocale = GetLocale and GetLocale() or nil
-    if currentLocale and currentLocale == locale then
-      localeTable = aceLocale:GetLocale(LOCALE_NAMESPACE, true)
-    end
-    if not localeTable then
-      return nil
-    end
+    return nil
   end
 
   for key, value in pairs(normalized) do
@@ -58,14 +55,35 @@ function MultiBot.RegisterLocaleStrings(locale, values, isDefault)
   return localeTable
 end
 
+-- Resolved once and cached: MultiBot.L runs on every tooltip build and every status line,
+-- and the namespace's locale table never changes after the locale file has registered.
+local activeLocaleTable = nil
+
+local function getActiveLocaleTable()
+  if activeLocaleTable then
+    return activeLocaleTable
+  end
+
+  if not aceLocale then
+    return nil
+  end
+
+  local resolved = aceLocale:GetLocale(LOCALE_NAMESPACE, true)
+  if type(resolved) == "table" then
+    activeLocaleTable = resolved
+  end
+
+  return activeLocaleTable
+end
+
 function MultiBot.GetLocaleString(key, fallback)
   if type(key) ~= "string" then
     return fallback
   end
 
-  if aceLocale then
-    local activeLocale = aceLocale:GetLocale(LOCALE_NAMESPACE, true)
-    local activeValue = type(activeLocale) == "table" and rawget(activeLocale, key) or nil
+  local activeLocale = getActiveLocaleTable()
+  if activeLocale then
+    local activeValue = rawget(activeLocale, key)
     if type(activeValue) == "string" then
       return activeValue
     end
@@ -85,50 +103,11 @@ function MultiBot.GetLocaleString(key, fallback)
 end
 
 
-local function setValueByPath(root, keyPath, value)
-  if type(root) ~= "table" or type(keyPath) ~= "string" then
-    return
-  end
-
-  local target = root
-  local startIndex = 1
-
-  while true do
-    local separatorIndex = string.find(keyPath, ".", startIndex, true)
-    if not separatorIndex then
-      local leafKey = string.sub(keyPath, startIndex)
-      if leafKey ~= "" then
-        target[leafKey] = value
-      end
-      return
-    end
-
-    local segment = string.sub(keyPath, startIndex, separatorIndex - 1)
-    if segment == "" then
-      return
-    end
-
-    local nextTarget = target[segment]
-    if type(nextTarget) ~= "table" then
-      nextTarget = {}
-      target[segment] = nextTarget
-    end
-
-    target = nextTarget
-    startIndex = separatorIndex + 1
-  end
-end
-
-function MultiBot.ApplyLocaleKeyValues(localeValues)
-  if type(localeValues) ~= "table" then
-    return
-  end
-
-  for keyPath, value in pairs(localeValues) do
-    if type(keyPath) == "string" and type(value) == "string" then
-      setValueByPath(MultiBot, keyPath, value)
-    end
-  end
-end
+-- Removed: ApplyLocaleKeyValues / setValueByPath.
+-- They exploded every dotted locale key into nested tables ON THE MultiBot GLOBAL
+-- (MultiBot.tips.every.loot = "...", and so on for ~1000 keys). Nothing read them —
+-- every lookup goes through MultiBot.L — while the first path segment of a key silently
+-- pre-created MultiBot.inventory / .talent / .spellbook / .spec as string tables before
+-- the real UI frames claimed those fields. Strings live in AceLocale only.
 
 MultiBot.L = MultiBot.GetLocaleString

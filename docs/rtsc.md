@@ -137,8 +137,9 @@ MultiBot.bridge.rtsc = {
 bookkeeping instead of blanking the bar.
 
 The slot faces render from this, not from click bookkeeping: clicking an empty slot only *arms* a
-save, and the slot fills only after `UNIT_SPELLCAST_SUCCEEDED` for the marker spell is followed by
-a fresh `GET~RTSC`. Escaping the reticle therefore leaves the slot empty, as it should.
+save, and the slot fills only once a marker cast has actually happened (see *Seeing a cast* below)
+and a fresh `GET~RTSC` confirms it. Escaping the reticle therefore leaves the slot empty, as it
+should.
 
 Selection is reported as a **count in the root button's tooltip**. It is deliberately not painted
 onto Units roster buttons — a unit button's `state` is its online/offline flag and must not be
@@ -284,6 +285,15 @@ Left of centre: nine location slots (`MACRO<i>` when empty, `RTSC<i>` when fille
 Right of centre: group/role selector buttons, `@all`, Browse, then Move / Last / Here. Two hairline
 separators mark the three blocks (spots · selection · actions).
 
+The selector block holds **seven role buttons** (x 30→210) or, when Browse is on, **eight group
+buttons** (x 30→240) — a raid has eight subgroups, and playerbots' `@group<n>` filter reads
+`GetSubGroup() + 1` with no upper bound (`SubGroupChatFilter`), so all eight work server-side with
+no module change. `Icons/` only ships art for groups 1-5; 6-8 reuse the generic RTSC icon and carry
+their number on the face (`label` in `RTSC_GROUP_BUTTONS`), like the location slots do — drop
+`rtsc_group<n>.blp` files in and clear `label` to give them their own art. Because the group row
+now reaches 240, the always-visible tail moved one 30px slot right: `@all` 270, Browse 300,
+separator 301, Move 330, Last 360, Here 390.
+
 Each slot carries its **number** on the face — grey digits when empty, gold when a spot is stored.
 Both faces use the same icon and the same position, so without the digit there is nothing to tell
 slot 3 from slot 7.
@@ -342,3 +352,30 @@ permanently out of step with its logical state.
 Opening the panel retries `GET~RTSC` until the bridge answers (5 tries, 0.75 s apart). A single
 request could lose the race with the handshake, and the bar then rendered empty slots from local
 bookkeeping — indistinguishable from "my saved spots are gone".
+
+## Seeing a cast, and not repainting from a stale read
+
+Three things kept the bar's *picture* one click behind the state it was already driving correctly:
+a spot stored or deleted stayed the way it was until some unrelated click, and a selection made by
+plain rubber-band casting never showed up on the count badge at all.
+
+- **The cast signal.** SeeSpellAction runs off the master's **outgoing** `CMSG_CAST_SPELL` for
+  spell 30758 — the bots never wait for the server to confirm the cast, and on a worldserver that
+  does not report it back, `UNIT_SPELLCAST_SUCCEEDED` never fires. Everything the bar does after a
+  cast (fill the armed slot, re-read the state, hence the count badge after a plain send) used to
+  hang off that one event. It now also listens to **`UNIT_SPELLCAST_SENT`**, which fires when the
+  client transmits that very packet, as a *fallback*: it defers by 1 s and stands down if
+  `SUCCEEDED` handled the cast meanwhile, so the trusted event keeps priority and a cast is never
+  processed twice.
+- **Optimistic slot marks are timestamped.** `save`, `save here` and `unsave` all reach the bots
+  through their command queue, so the read fired after the action can still answer from *before*
+  they applied it. The bar paints the slot the way the click meant it (`markSlotPending`) and holds
+  that paint for `RTSC_CAST_SETTLE + 1 s`, so an early answer cannot flip it back; the next read
+  reconciles it with the truth. Deleting a spot no longer re-reads instantly (it always lost that
+  race) — it repaints at once and re-reads after the settle window, like storing does.
+- **A backstop read every 5 s while the row is open.** Every other refresh here is hung off a click
+  or a cast, so state the master never explicitly asked for — the rubber-band selection a plain
+  cast performs, a command that landed after its post-action read, a bot that relogged — had no way
+  onto the screen. The poll skips itself while a deliberate read is outstanding (that read's answer
+  is consumed as the new selection yardstick) and stops on the first tick that finds the row
+  hidden.

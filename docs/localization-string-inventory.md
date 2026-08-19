@@ -1,5 +1,13 @@
 # Localization String Inventory (Milestone 9 kickoff)
 
+> **Status: this branch is English-only.** The seven non-English locale files
+> (`frFR`, `esES`, `deDE`, `enGB`, `ruRU`, `zhCN`, `koKR`) and the empty
+> `Locales/MultiBotAceLocale.lua` stub were removed; `Locales/MultiBotAceLocale-enUS.lua`
+> is the single locale file and registers itself as the AceLocale default, so any client
+> locale resolves to it. The `MultiBot.L(key, fallback)` pipeline below is unchanged and
+> is still the right place for every new user-facing string -- only the "expand key
+> coverage locale-by-locale" goal no longer applies.
+
 Initial inventory of user-facing hardcoded strings in `Core/`, `UI/`, and `Features/`.
 
 ## Method
@@ -64,12 +72,14 @@ Initial inventory of user-facing hardcoded strings in `Core/`, `UI/`, and `Featu
   2. Registered `enUS` defaults
   3. Per-call fallback string
   4. Locale key itself
-- Added dedicated AceLocale registration file (`Locales/MultiBotAceLocale.lua`) to start new keys without rewriting legacy locale files.
+- Added a dedicated AceLocale registration file to start new keys without rewriting legacy
+  locale files. (Removed when the branch went English-only; `MultiBotAceLocale-enUS.lua`
+  is now the only locale file.)
 
 ## Next milestone-9 increments
 
 1. Continue scanning `Core/UI/Features/Strategies` for any newly introduced user-facing hardcoded strings in incremental PRs.
-2. Expand key coverage locale-by-locale while keeping deterministic fallback behavior.
+2. ~~Expand key coverage locale-by-locale~~ -- superseded: English is the only locale.
 3. Keep class-specific AoE labels routed through locale keys (e.g. `tips.deathknight.dps.frostAoe` / `tips.deathknight.dps.unholyAoe`) instead of inline literals.
 4. Keep generic prompt defaults localized/client-localized (e.g. `OKAY` and `MultiBot.info.hunterpeteditentervalue`) instead of inline literals in prompt builders.
 5. Use client-localized global constants for Blizzard UI nouns when available (e.g. `SPELLBOOK` instead of inline `"Spellbook"`).

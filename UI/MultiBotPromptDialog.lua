@@ -37,7 +37,9 @@ local function PositionPromptBesideFrame(anchorFrame)
     end
 end
 
-function ShowPrompt(title, onOk, defaultText, anchorFrame)
+-- File-local; published as MultiBot.ShowPrompt at the bottom. It used to be a bare _G
+-- function, and "ShowPrompt" is generic enough to collide with any other loaded addon.
+local function ShowPrompt(title, onOk, defaultText, anchorFrame)
     local aceGUI = MultiBot.ResolveAceGUI and MultiBot.ResolveAceGUI("AceGUI-3.0 is required for MBUniversalPrompt") or nil
     if not aceGUI then
         return

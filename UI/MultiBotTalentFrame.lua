@@ -153,24 +153,24 @@ local function syncTalentButtonStateOnHide()
     setTalentButtonEnabled(talentFrame.name, false)
 end
 
--- TODO = Mettre une variable pour deplacer l'icone fallback dans le cadre
+-- TODO: add a variable to move the fallback icon inside the frame
 local DEFAULT_TALENT_HOST_CONTENT_LAYOUT = {
-    CONTENT_TUNE_X = 0, -- Décalage horizontal global de tout le contenu dans la fenêtre host ACE.
-    CONTENT_TUNE_Y = 0, -- Décalage vertical global de tout le contenu dans la fenêtre host ACE.
-    POINTS_TEXT_TUNE_X = -20, -- Ajuste horizontalement le texte "Points" (points talents restants).
-    POINTS_TEXT_TUNE_Y = 90, -- Ajuste verticalement le texte "Points" (points talents restants).
-    TITLE_TEXT_TUNE_X = 0, -- Ajuste horizontalement le titre Talents/Glyphes affiché dans le contenu.
-    TITLE_TEXT_TUNE_Y = 0, -- Ajuste verticalement le titre Talents/Glyphes affiché dans le contenu.
-    TALENT_TREES_TUNE_X = -24, -- Décalage horizontal appliqué aux 3 arbres de talents (Talents + Custom Talents).
-    TALENT_TREES_TUNE_Y = 85, -- Décalage vertical appliqué aux 3 arbres de talents (Talents + Custom Talents).
-    GLYPH_OVERVIEW_TUNE_X = -25, -- Décalage horizontal du panneau principal de l'onglet Glyphes.
-    GLYPH_OVERVIEW_TUNE_Y = 75, -- Décalage vertical du panneau principal de l'onglet Glyphes.
-    GLYPH_SOCKETS_TUNE_X = 0, -- Décalage horizontal de toutes les sockets dans le panneau Glyphes.
-    GLYPH_SOCKETS_TUNE_Y = 0, -- Décalage vertical de toutes les sockets dans le panneau Glyphes.
-    GLYPH_ICON_TUNE_X = 0, -- Décalage horizontal de l'icône affichée dans une socket de glyphe (0 = centré).
-    GLYPH_ICON_TUNE_Y = 0, -- Décalage vertical de l'icône affichée dans une socket de glyphe (0 = centré).
-    GLYPH_ICON_SIZE_SCALE = 0.60, -- Échelle de taille des icônes glyphes (item/spell normal) relative à la socket.
-    GLYPH_FALLBACK_ICON_SIZE_SCALE = 0.66, -- Échelle spécifique de l'icône fallback UI-GlyphFrame-Glow.blp relative à la socket.
+    CONTENT_TUNE_X = 0, -- Global horizontal offset of all content inside the ACE host window.
+    CONTENT_TUNE_Y = 0, -- Global vertical offset of all content inside the ACE host window.
+    POINTS_TEXT_TUNE_X = -20, -- Horizontal tweak for the "Points" text (remaining talent points).
+    POINTS_TEXT_TUNE_Y = 90, -- Vertical tweak for the "Points" text (remaining talent points).
+    TITLE_TEXT_TUNE_X = 0, -- Horizontal tweak for the Talents/Glyphs title shown in the content.
+    TITLE_TEXT_TUNE_Y = 0, -- Vertical tweak for the Talents/Glyphs title shown in the content.
+    TALENT_TREES_TUNE_X = -24, -- Horizontal offset applied to the 3 talent trees (Talents + Custom Talents).
+    TALENT_TREES_TUNE_Y = 85, -- Vertical offset applied to the 3 talent trees (Talents + Custom Talents).
+    GLYPH_OVERVIEW_TUNE_X = -25, -- Horizontal offset of the Glyphs tab main panel.
+    GLYPH_OVERVIEW_TUNE_Y = 75, -- Vertical offset of the Glyphs tab main panel.
+    GLYPH_SOCKETS_TUNE_X = 0, -- Horizontal offset of every socket in the Glyphs panel.
+    GLYPH_SOCKETS_TUNE_Y = 0, -- Vertical offset of every socket in the Glyphs panel.
+    GLYPH_ICON_TUNE_X = 0, -- Horizontal offset of the icon shown in a glyph socket (0 = centered).
+    GLYPH_ICON_TUNE_Y = 0, -- Vertical offset of the icon shown in a glyph socket (0 = centered).
+    GLYPH_ICON_SIZE_SCALE = 0.60, -- Size scale of the glyph icons (normal item/spell) relative to the socket.
+    GLYPH_FALLBACK_ICON_SIZE_SCALE = 0.66, -- Size scale specific to the UI-GlyphFrame-Glow.blp fallback icon, relative to the socket.
 }
 
 function MultiBot.InitializeTalentFrameModule()
@@ -1366,7 +1366,7 @@ function MultiBot.InitializeTalentFrameModule()
             ids[wireSlot] = tonumber(socket and (socket.item or socket.itemID or socket.glyphID)) or 0
         end
         local payload = "glyph equip " .. table.concat(ids, " ")
-        -- Debug manuel si besoin :
+        -- Manual debug, if needed:
         -- DEFAULT_CHAT_FRAME:AddMessage("|cff66ccff[DBG]|r " .. MultiBot.L("talent.glyphs.debug_prefix") ..
         --     (MultiBot.talent.name or "?") .. " : " .. payload)
         SendChatMessage(payload, "WHISPER", nil, MultiBot.talent.name)
@@ -2334,7 +2334,16 @@ function MultiBot.InitializeTalentFrameModule()
 
     function MultiBot.talent.getGlyphItemType(itemID)
         if not MultiBot.talent.glyphTip then
-            MultiBot.talent.glyphTip = ensureHiddenTooltip("MBHiddenTip", UIParent)
+            -- ensureHiddenTooltip is a FILE-LOCAL in MultiBotAceUI.lua; the bare name resolved
+            -- to a nil global here, so this threw the first time a glyph had to be classified.
+            local ensure = MultiBot.AceUI and MultiBot.AceUI.EnsureHiddenTooltip
+            if type(ensure) ~= "function" then
+                return nil
+            end
+            MultiBot.talent.glyphTip = ensure("MBHiddenTip", UIParent)
+        end
+        if not MultiBot.talent.glyphTip then
+            return nil
         end
         MultiBot.talent.glyphTip:ClearLines()
         MultiBot.talent.glyphTip:SetHyperlink("item:"..itemID..":0:0:0:0:0:0:0")
@@ -2474,7 +2483,9 @@ function MultiBot.InitializeTalentFrameModule()
         end
 
         if glyphInfo then
-            local reqLvl = tonumber((strsplit(",%s*", glyphInfo)))
+            -- strsplit takes a set of delimiter CHARACTERS, not a Lua pattern: the old
+            -- ",%s*" also split on '%', 's' and '*'.
+            local reqLvl = tonumber(strtrim((strsplit(",", glyphInfo))))
             if reqLvl and reqLvl > level then
                 return nil, MultiBot.L("info.glyphsleveltoolow")
             end

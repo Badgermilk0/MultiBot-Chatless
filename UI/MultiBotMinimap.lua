@@ -4,7 +4,7 @@ if not MultiBot then return end
 
 do
   local BTN_NAME = "MultiBot_MinimapButton"
-  local RADIUS = 80 -- rayon d’ancrage au bord de la minimap
+  local RADIUS = 80 -- anchoring radius on the minimap edge
 
   local function deg2rad(degrees)
     return degrees * math.pi / 180

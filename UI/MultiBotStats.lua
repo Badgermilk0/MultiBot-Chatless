@@ -146,7 +146,6 @@ MultiBot.addStats = function(pFrame, pIndex, pX, pY, pSize, pWidth, pHeight)
 	tFrame.setStats = function(pName, pLevel, pStats, oPlayer)
 		local statsFrame = MultiBot.stats.frames[MultiBot.toUnit(pName)]
 		local addonFrame = statsFrame.frames["Addon"]
-		local tChina = GetLocale() == "zhCN"
 
 		if oPlayer ~= nil and oPlayer == true then
 			local tStats = MultiBot.doSplit(pStats, ", ")
@@ -177,12 +176,7 @@ MultiBot.addStats = function(pFrame, pIndex, pX, pY, pSize, pWidth, pHeight)
 
 		local tStats = MultiBot.doSplit(pStats, ", ")
 		local tMoney = "|cffffdd55" .. tStats[1] .. "|r, "
-		local tBag = MultiBot.IF(
-			tChina,
-			MultiBot.doReplace(tStats[2], "Bag", shortLabel("bag", "Bag")),
-			tStats[2]
-		)
-		local valuesText = tMoney .. tBag
+		local valuesText = tMoney .. tStats[2]
 
 		statsFrame.texts["Level"]:SetText(pLevel)
 		updateStatsTextLayout(statsFrame, pName, valuesText)

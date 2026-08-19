@@ -96,16 +96,6 @@ local function getItemusEmptyStateMessage()
     textValue = textValue:gsub("^%s+", ""):gsub("%s+$", "")
 
     local firstSentence = textValue:match("^(.-[%.%!%?])")
-    if not firstSentence then
-        local sentenceEndings = { "。", "！", "？" }
-        for _, ending in ipairs(sentenceEndings) do
-            local stopIndex = string.find(textValue, ending, 1, true)
-            if stopIndex then
-                firstSentence = string.sub(textValue, 1, stopIndex)
-                break
-            end
-        end
-    end
 
     firstSentence = (firstSentence or textValue or fallback):gsub("^%s+", ""):gsub("%s+$", "")
     if firstSentence == "" then

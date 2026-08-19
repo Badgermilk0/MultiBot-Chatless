@@ -1549,9 +1549,9 @@ MultiBot.data.talent.glyphs = {
 }
 
 -- =========================================================================
---  Spéc-glyphes par build prédéfini                   (généré automatiquement)
---  à placer dans   Interface/AddOns/MultiBot/MultiBotTalent.lua
---  juste après le bloc   MultiBot.data.talent.glyphs = { … }
+--  Glyph sets per predefined build                   (generated automatically)
+--  belongs in   Interface/AddOns/MultiBot/MultiBotTalent.lua
+--  right after the   MultiBot.data.talent.glyphs = { ... }   block
 -- =========================================================================
 MultiBot.data.talent.specGlyphs = {
     WARRIOR = {      -- 1.x
@@ -1640,20 +1640,20 @@ MultiBot.data.talent.specGlyphs = {
 }
 
 -- -------------------------------------------------------------------------
---  Rend les clés insensibles à la casse :
---      "DRUID"  ► table
---      "Druid"  ► la *même* table
---  À placer immédiatement après la définition de
+--  Makes the keys case-insensitive:
+--      "DRUID"  -> table
+--      "Druid"  -> the *same* table
+--  Belongs immediately after the definition of
 --  MultiBot.data.talent.specGlyphs
 -- -------------------------------------------------------------------------
 do
-    local unified = {}                                   -- nouvelle table
+    local unified = {}                                   -- new table
     for upperKey, tbl in pairs(MultiBot.data.talent.specGlyphs) do
         local mixedKey = upperKey:sub(1,1)..upperKey:sub(2):lower()
-        unified[upperKey] = tbl                          -- conservation MAJ
-        unified[mixedKey] = tbl                          -- ajout minuscule
+        unified[upperKey] = tbl                          -- keep the uppercase key
+        unified[mixedKey] = tbl                          -- add the mixed-case key
     end
 
-    -- On remplace l’ancienne table par la nouvelle
+    -- Swap the old table for the new one
     MultiBot.data.talent.specGlyphs = unified
 end

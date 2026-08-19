@@ -954,6 +954,9 @@ local enUSValues = {
   ["tips.rtsc.group3"] = "Group 3\n|cffffffffPick which bots the next marker cast, Move, Last or spot button acts on.\nLit buttons are the current selection; the number on the RTSC button is how many bots the server reports as selected.|r\n\n|cffff0000Left-click: select ONLY group 3, then click the ground to send them|r\n|cff999999(Executed by: Raid, Party)|r\n\n|cffff0000Right-click: add group 3 to the selection, or remove them if already selected|r\n|cff999999(Executed by: Raid, Party)|r",
   ["tips.rtsc.group4"] = "Group 4\n|cffffffffPick which bots the next marker cast, Move, Last or spot button acts on.\nLit buttons are the current selection; the number on the RTSC button is how many bots the server reports as selected.|r\n\n|cffff0000Left-click: select ONLY group 4, then click the ground to send them|r\n|cff999999(Executed by: Raid, Party)|r\n\n|cffff0000Right-click: add group 4 to the selection, or remove them if already selected|r\n|cff999999(Executed by: Raid, Party)|r",
   ["tips.rtsc.group5"] = "Group 5\n|cffffffffPick which bots the next marker cast, Move, Last or spot button acts on.\nLit buttons are the current selection; the number on the RTSC button is how many bots the server reports as selected.|r\n\n|cffff0000Left-click: select ONLY group 5, then click the ground to send them|r\n|cff999999(Executed by: Raid, Party)|r\n\n|cffff0000Right-click: add group 5 to the selection, or remove them if already selected|r\n|cff999999(Executed by: Raid, Party)|r",
+  ["tips.rtsc.group6"] = "Group 6\n|cffffffffPick which bots the next marker cast, Move, Last or spot button acts on.\nLit buttons are the current selection; the number on the RTSC button is how many bots the server reports as selected.|r\n\n|cffff0000Left-click: select ONLY group 6, then click the ground to send them|r\n|cff999999(Executed by: Raid, Party)|r\n\n|cffff0000Right-click: add group 6 to the selection, or remove them if already selected|r\n|cff999999(Executed by: Raid, Party)|r",
+  ["tips.rtsc.group7"] = "Group 7\n|cffffffffPick which bots the next marker cast, Move, Last or spot button acts on.\nLit buttons are the current selection; the number on the RTSC button is how many bots the server reports as selected.|r\n\n|cffff0000Left-click: select ONLY group 7, then click the ground to send them|r\n|cff999999(Executed by: Raid, Party)|r\n\n|cffff0000Right-click: add group 7 to the selection, or remove them if already selected|r\n|cff999999(Executed by: Raid, Party)|r",
+  ["tips.rtsc.group8"] = "Group 8\n|cffffffffPick which bots the next marker cast, Move, Last or spot button acts on.\nLit buttons are the current selection; the number on the RTSC button is how many bots the server reports as selected.|r\n\n|cffff0000Left-click: select ONLY group 8, then click the ground to send them|r\n|cff999999(Executed by: Raid, Party)|r\n\n|cffff0000Right-click: add group 8 to the selection, or remove them if already selected|r\n|cff999999(Executed by: Raid, Party)|r",
   ["tips.rtsc.tank"] = "Tanks\n|cffffffffPick which bots the next marker cast, Move, Last or spot button acts on.\nLit buttons are the current selection; the number on the RTSC button is how many bots the server reports as selected.|r\n\n|cffff0000Left-click: select ONLY the tanks, then click the ground to send them|r\n|cff999999(Executed by: Raid, Party)|r\n\n|cffff0000Right-click: add the tanks to the selection, or remove them if already selected|r\n|cff999999(Executed by: Raid, Party)|r",
   ["tips.rtsc.dps"] = "DPS\n|cffffffffPick which bots the next marker cast, Move, Last or spot button acts on.\nLit buttons are the current selection; the number on the RTSC button is how many bots the server reports as selected.|r\n\n|cffff0000Left-click: select ONLY the DPS, then click the ground to send them|r\n|cff999999(Executed by: Raid, Party)|r\n\n|cffff0000Right-click: add the DPS to the selection, or remove them if already selected|r\n|cff999999(Executed by: Raid, Party)|r",
   ["tips.rtsc.healer"] = "Healers\n|cffffffffPick which bots the next marker cast, Move, Last or spot button acts on.\nLit buttons are the current selection; the number on the RTSC button is how many bots the server reports as selected.|r\n\n|cffff0000Left-click: select ONLY the healers, then click the ground to send them|r\n|cff999999(Executed by: Raid, Party)|r\n\n|cffff0000Right-click: add the healers to the selection, or remove them if already selected|r\n|cff999999(Executed by: Raid, Party)|r",
@@ -1049,10 +1052,16 @@ local enUSValues = {
   ["info.trainer.reason.NO_MATCHING_SPELL"] = "This spell is no longer available.",
   ["info.trainer.reason.TOO_EXPENSIVE"] = "The bot does not have enough available money.",
   ["tips.outfits.equip"] = "Left click: Equip\nRight click: Replace",
+
+  -- Strings that were previously hardcoded in the UI files (one still in French).
+  ["tips.every.characterinfo"] = "Character Info|cffffffff\nOpens this Bot's character sheet: stats, skills, reputations and emblems.|r\n\n|cffff0000Left-click to open|r\n|cff999999(Executed by: Bot)|r",
+  ["tips.every.outfits"] = "Outfits|cffffffff\nManage this Bot's saved equipment sets.|r\n\n|cffff0000Left-click to open|r\n|cff999999(Executed by: Bot)|r",
+  ["tips.sliders.throttleinstalledformat"] = "%s (%.0f msg/s, burst %d)",
+  ["inventory.title"] = "Inventory",
+  ["tips.quests.tooltipgroup"] = "Group:",
+  ["tips.inspect.unequiphint"] = "Right-click: unequip (ue)",
+  ["tips.main.pullcontroltitle"] = "Pull Control",
+  ["tips.main.pullwaitformat"] = "Wait: %ss",
 }
 
 register("enUS", enUSValues, true)
-
-if type(MultiBot.ApplyLocaleKeyValues) == "function" then
-  MultiBot.ApplyLocaleKeyValues(enUSValues)
-end

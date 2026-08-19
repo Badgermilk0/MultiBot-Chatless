@@ -11,18 +11,24 @@ local MAINBAR_BUTTON_STEP_Y = 34
 local MAINBAR_AUTOHIDE_HOTSPOT_SIZE = 42
 local MAINBAR_AUTOHIDE_UPDATE_INTERVAL = 0.2
 
-local function resetDefaultWindowPositions()
-    MultiBot.frames["MultiBar"].setPoint(-363, 144)
-    MultiBot.inventory.setPoint(-700, -144)
-    MultiBot.spellbook.setPoint(-802, 302)
-    MultiBot.talent.setPoint(-104, -276)
-    MultiBot.reward.setPoint(-754, 238)
-    MultiBot.itemus.setPoint(-860, -144)
-    MultiBot.iconos.setPoint(-860, -144)
-    local statsFrame = MultiBot.EnsureStatsUI and MultiBot.EnsureStatsUI() or MultiBot.stats
-    if statsFrame and statsFrame.setPoint then
-        statsFrame.setPoint(-60, 560)
+-- Several of these windows are built lazily (the inventory frame, for instance, only exists
+-- once a bot's bags have been opened), so reposition whatever is actually there instead of
+-- throwing on the first missing one and leaving the rest of the windows unmoved.
+local function resetWindowPosition(frame, x, y)
+    if frame and type(frame.setPoint) == "function" then
+        frame.setPoint(x, y)
     end
+end
+
+local function resetDefaultWindowPositions()
+    resetWindowPosition(MultiBot.frames and MultiBot.frames["MultiBar"], -363, 144)
+    resetWindowPosition(MultiBot.inventory, -700, -144)
+    resetWindowPosition(MultiBot.spellbook, -802, 302)
+    resetWindowPosition(MultiBot.talent, -104, -276)
+    resetWindowPosition(MultiBot.reward, -754, 238)
+    resetWindowPosition(MultiBot.itemus, -860, -144)
+    resetWindowPosition(MultiBot.iconos, -860, -144)
+    resetWindowPosition(MultiBot.EnsureStatsUI and MultiBot.EnsureStatsUI() or MultiBot.stats, -60, 560)
 end
 
 local function toggleMasters(button)
@@ -348,7 +354,7 @@ local function updatePullControlWaitLabel(frame)
         return
     end
 
-    frame.waitLabel:SetText("Wait: " .. tostring(frame._mbWaitTime or 0) .. "s")
+    frame.waitLabel:SetText(string.format(MultiBot.L("tips.main.pullwaitformat", "Wait: %ss"), tostring(frame._mbWaitTime or 0)))
 end
 
 local function setPullControlStates(frame, wait, focus, dpsAssist, dpsAoe)
@@ -392,7 +398,7 @@ local function createPullControlFrame(mainFrame, pullButton)
     frame.title = frame:CreateFontString(nil, "ARTWORK")
     frame.title:SetFont("Fonts\\ARIALN.ttf", 12, "OUTLINE")
     frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -8)
-    frame.title:SetText("Pull Control")
+    frame.title:SetText(MultiBot.L("tips.main.pullcontroltitle", "Pull Control"))
 
     createPullControlScopeButton(frame, "ScopeBot", 10, "Selected", "tips.main.pullscopebot", "BOT")
     createPullControlScopeButton(frame, "ScopeGroup", 82, "Party", "tips.main.pullscopegroup", "GROUP")

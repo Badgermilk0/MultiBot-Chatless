@@ -303,6 +303,11 @@ local function requestInventoryPostActionRefresh(botName, firstDelay, secondDela
     requestInventoryRefresh(firstDelay or 0.45, targetBotName)
 end
 
+-- Forward declaration: the destroy-confirm popup below closes over this, but the real
+-- definition comes later in the file. Without the forward local, the closure compiled
+-- against the (nil) GLOBAL of the same name and OnAccept threw instead of destroying.
+local sendInventoryItemCommand
+
 local function bindInventoryDestroyConfirm(button, botName)
     if not StaticPopupDialogs["MULTIBOT_CONFIRM_DESTROY"] then
         StaticPopupDialogs["MULTIBOT_CONFIRM_DESTROY"] = {
@@ -380,7 +385,7 @@ local function needsInventoryDestroyConfirmation(item)
         or ((item and item.rare or 0) > 3)
 end
 
-local function sendInventoryItemCommand(command, button, botName, options)
+function sendInventoryItemCommand(command, button, botName, options)
     options = options or {}
 
     if not command or command == "" or not button or not botName or botName == "" then

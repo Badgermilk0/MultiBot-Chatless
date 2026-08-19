@@ -126,7 +126,7 @@ local function CreateStyledFrame()
     customHeader:SetText(MultiBot.L("tips.every.pvpcustom"))
     top = top + 18 + 6
 
-    -- Bot selector (cache par bot) - alimenté par les réponses [PVP] reçues en whisper
+    -- Bot selector (per-bot cache) - fed by the [PVP] replies received over whisper
     local botDropDown
     local AceGUI = MBPVP_GetAceGUI()
     if AceGUI then
@@ -180,7 +180,7 @@ local function CreateStyledFrame()
     arenaSep:SetPoint("TOPRIGHT", arena, "TOPRIGHT", 0, -18)
     arenaSep:SetTexture(0.5, 0.5, 0.5, 0.6)
 
-    -- Points d'Arène (affiché à gauche de la section Arène)
+    -- Arena points (shown to the left of the Arena section)
     arena.pointsLabel = arena:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     arena.pointsLabel:SetPoint("TOPLEFT", arena, "TOPLEFT", 120, 0)
     arena.pointsLabel:SetText(MultiBot.L("tips.every.pvparenapoints"))
@@ -307,7 +307,7 @@ local function CreateStyledFrame()
 end
 
 -- ==========================
--- PvP cache par bot (whispers)
+-- Per-bot PvP cache (whispers)
 -- ==========================
 
 local function MBPVP_NormalizeSenderName(sender)
@@ -341,8 +341,7 @@ local function MBPVP_ExtractFirstTwoNumbers(line)
     return a, b
 end
 
--- Extrait un rating quel que soit le mot localisé:
--- "(rating 1234)" "(cote 1234)" "(Wertung 1234)" "(评分 1234)" "(평점 1234)" etc.
+-- Pulls the rating out of a "(rating 1234)" style suffix.
 local function MBPVP_ExtractTeamRating(line)
     return tostring(line):match("%(%s*[^%d]*(%d+)%s*%)")
 end
@@ -551,17 +550,9 @@ local function MBPVP_IsNoTeamMessage(msg)
 
     local lower = msg:lower()
 
-    -- EN + locales DB (text_loc1..8) de ton extract
     if lower:find("i have no arena team", 1, true) or lower:find("no arena team", 1, true) then
         return true
     end
-    if msg:find("투기장 팀이 없습니다", 1, true) then return true end
-    if msg:find("Je n'ai aucune équipe d'arène", 1, true) then return true end
-    if msg:find("Ich habe kein Arenateam", 1, true) then return true end
-    if msg:find("我没有竞技场战队", 1, true) then return true end
-    if msg:find("我沒有競技場隊伍", 1, true) then return true end
-    if msg:find("No tengo equipo de arena", 1, true) then return true end
-    if msg:find("У меня нет команды арены", 1, true) then return true end
 
     return false
 end
@@ -692,7 +683,7 @@ function MultiBot.HandlePvpWhisper(msg, sender)
     else
         local bracket = msg:match("([235]v[235])")
 
-        -- 2) Global "no arena team" message (EN + localized DB).
+        -- 2) Global "no arena team" message.
         if MBPVP_IsNoTeamMessage(msg) then
             for _, mode in ipairs({ "2v2", "3v3", "5v5" }) do
                 st.teams[mode] = st.teams[mode] or {}
