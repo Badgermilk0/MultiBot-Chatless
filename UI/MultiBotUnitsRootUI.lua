@@ -11,6 +11,7 @@ local UNITS_GUILD_RETRY_LIMIT = 6
 local UNITS_GUILD_RETRY_DELAY = 0.25
 
 local refreshStrategiesForActiveBots
+local updateBrowsePageLabel
 
 local FACTION_BANNERS = {
     Alliance = "inv_misc_tournaments_banner_human",
@@ -242,6 +243,10 @@ local function layoutVisibleUnits(unitsButton, unitsFrame, display, fromIndex, t
     unitsButton.to = endIndex
     unitsFrame.frames.Control.setPoint(-2, (unitsFrame.size + 2) * visibleCount)
     unitsButton._visibleNames = newVisible
+
+    if updateBrowsePageLabel then
+        updateBrowsePageLabel(unitsButton, unitsFrame, #display)
+    end
 end
 
 local function relayoutUnitsDisplay(unitsButton, unitsFrame)
@@ -274,6 +279,9 @@ local function relayoutUnitsDisplay(unitsButton, unitsFrame)
         unitsFrame.frames.Control.setPoint(-2, 0)
         if unitsFrame.frames.Control.buttons["Browse"] then
             unitsFrame.frames.Control.buttons["Browse"]:Hide()
+        end
+        if updateBrowsePageLabel then
+            updateBrowsePageLabel(unitsButton, unitsFrame, 0)
         end
         return
     end
@@ -972,31 +980,78 @@ local function createInviteControls(controlFrame)
     end
 end
 
-local function createBrowseButton(controlFrame)
-    controlFrame.addButton("Browse", 0, 180, "Interface\\AddOns\\MultiBot\\Icons\\browse.blp", MultiBot.L("tips.units.browse"))
-        .doLeft = function()
-            local unitsButton = MultiBot.frames.MultiBar.buttons[UNITS_BUTTON_NAME]
-            local unitsFrame = unitsButton.parent.frames[UNITS_FRAME_NAME]
-            local sourceTable = getUnitsSourceTable(unitsButton)
-            local total = sourceTable and #sourceTable or 0
-            if total == 0 then
-                return
-            end
+updateBrowsePageLabel = function(unitsButton, unitsFrame, total)
+    local control = unitsFrame and unitsFrame.frames and unitsFrame.frames.Control
+    local browseButton = control and control.buttons and control.buttons["Browse"]
+    if not browseButton or not browseButton.pageLabel then
+        return
+    end
 
-            local fromIndex = (unitsButton.to or UNITS_PAGE_SIZE) + 1
-            local toIndex = fromIndex + UNITS_PAGE_SIZE - 1
-            if fromIndex > total then
-                fromIndex = 1
-                toIndex = math.min(UNITS_PAGE_SIZE, total)
-            end
-            if toIndex > total then
-                toIndex = total
-            end
+    total = tonumber(total) or 0
+    if total <= 0 then
+        browseButton.pageLabel:SetText("")
+        return
+    end
 
-            local display = getDisplayableUnits(unitsFrame, sourceTable)
-            hideTrackedVisibleUnits(unitsButton, unitsFrame)
-            layoutVisibleUnits(unitsButton, unitsFrame, display, fromIndex, math.min(toIndex, #display))
+    local pages = math.max(1, math.ceil(total / UNITS_PAGE_SIZE))
+    local fromIndex = math.max(1, tonumber(unitsButton and unitsButton.from) or 1)
+    local current = math.min(pages, math.floor((fromIndex - 1) / UNITS_PAGE_SIZE) + 1)
+
+    browseButton.pageLabel:SetText(current .. "/" .. pages)
+end
+
+-- Paging used to be forward-only with a silent wrap-around and no indication of where you were in
+-- a 40-bot roster. Left-click still advances, right-click steps back, and the face carries the
+-- page counter.
+local function stepUnitsPage(direction)
+    local unitsButton = MultiBot.frames.MultiBar.buttons[UNITS_BUTTON_NAME]
+    local unitsFrame = unitsButton and unitsButton.parent.frames[UNITS_FRAME_NAME]
+    if not unitsFrame then
+        return
+    end
+
+    local display = getDisplayableUnits(unitsFrame, getUnitsSourceTable(unitsButton))
+    local total = #display
+    if total == 0 then
+        return
+    end
+
+    local fromIndex
+    if direction >= 0 then
+        fromIndex = (tonumber(unitsButton.to) or UNITS_PAGE_SIZE) + 1
+        if fromIndex > total then
+            fromIndex = 1
         end
+    else
+        fromIndex = (tonumber(unitsButton.from) or 1) - UNITS_PAGE_SIZE
+        if fromIndex < 1 then
+            fromIndex = (math.ceil(total / UNITS_PAGE_SIZE) - 1) * UNITS_PAGE_SIZE + 1
+        end
+    end
+
+    hideTrackedVisibleUnits(unitsButton, unitsFrame)
+    layoutVisibleUnits(unitsButton, unitsFrame, display, fromIndex, math.min(total, fromIndex + UNITS_PAGE_SIZE - 1))
+end
+
+local function createBrowseButton(controlFrame)
+    local browseButton = controlFrame.addButton("Browse", 0, 180, "Interface\\AddOns\\MultiBot\\Icons\\browse.blp", MultiBot.L("tips.units.browse"))
+
+    -- Built once and retexted on every relayout; setAmount() would allocate a new FontString each
+    -- time it is called.
+    browseButton.pageLabel = browseButton:CreateFontString(nil, "OVERLAY")
+    browseButton.pageLabel:SetFont("Fonts\\ARIALN.ttf", 11, "OUTLINE")
+    browseButton.pageLabel:SetPoint("BOTTOMRIGHT", browseButton, "BOTTOMRIGHT", -1, 1)
+    browseButton.pageLabel:SetTextColor(1, 0.82, 0)
+
+    browseButton.doLeft = function()
+        stepUnitsPage(1)
+    end
+
+    browseButton.doRight = function()
+        stepUnitsPage(-1)
+    end
+
+    return browseButton
 end
 
 function MultiBot.InitializeUnitsRootUI(tMultiBar)

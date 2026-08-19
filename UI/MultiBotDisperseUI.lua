@@ -51,9 +51,21 @@ function MultiBot.BuildDisperseUI(tLeft)
         return MultiBot.frames.disperse
     end
 
+    local buttonX = MultiBot.GetLeftBarSlotX("Disperse")
     local lastDistance = "10"
     local button
-    local menu = tLeft.addFrame("DisperseMenu", -34, 34, 24, 56, 96).doHide()
+
+    -- Read on demand, not once at build time: the config store is not populated yet while the bars
+    -- are being constructed.
+    local function savedDistance()
+        if MultiBot.GetDisperseDistance then
+            return tostring(MultiBot.GetDisperseDistance())
+        end
+
+        return lastDistance
+    end
+
+    local menu = tLeft.addFrame("DisperseMenu", buttonX, 34, 24, 56, 96).doHide()
     local menuOpen = false
     menu._mbDropdownManaged = true
     menu:SetWidth(56)
@@ -71,6 +83,49 @@ function MultiBot.BuildDisperseUI(tLeft)
         self:ClearFocus()
     end)
 
+    -- The root button reports the *feature* state, not whether its dropdown happens to be open:
+    -- lit + a yardage badge while a disperse distance is applied, greyed once it is disabled.
+    -- The truth comes from POSITION_ACK (MultiBot.OnPositionCommandApplied), so the button never
+    -- claims a distance the bots did not accept.
+    local function setDisperseBadge(text)
+        -- setAmount() builds a fresh FontString on every call, so create it once and then just
+        -- retext it: this runs on every disperse set/disable for the whole session.
+        if button.amount then
+            button.amount:SetText(text)
+            return
+        end
+
+        button.setAmount(text)
+    end
+
+    local function setDisperseActiveVisual(distance)
+        if not button then
+            return
+        end
+
+        if distance then
+            button.setEnable()
+            setDisperseBadge(tostring(distance))
+            return
+        end
+
+        button.setDisable()
+        setDisperseBadge("")
+    end
+
+    MultiBot.OnPositionCommandApplied = function(command, executed)
+        if (tonumber(executed) or 0) <= 0 then
+            return
+        end
+
+        local distance = string.match(command or "", "^disperse set%s+(.+)$")
+        if distance then
+            setDisperseActiveVisual(distance)
+        elseif command == "disperse disable" then
+            setDisperseActiveVisual(nil)
+        end
+    end
+
     local function setDistance()
         local distance = NormalizeDistance(input:GetText())
         if not distance then
@@ -79,6 +134,9 @@ function MultiBot.BuildDisperseUI(tLeft)
         end
 
         lastDistance = distance
+        if MultiBot.SetDisperseDistance then
+            MultiBot.SetDisperseDistance(distance)
+        end
         input:SetText(distance)
         input:ClearFocus()
         RunDisperseCommand("disperse set " .. distance)
@@ -108,19 +166,11 @@ function MultiBot.BuildDisperseUI(tLeft)
             input:Show()
             setButton:doShow()
             disableButton:doShow()
-
-            if button then
-                button.setEnable()
-            end
         else
             input:Hide()
             setButton:doHide()
             disableButton:doHide()
-
-            if button then
-                button.setDisable()
-            end
-       end
+        end
 
         updateClickBlocker()
     end
@@ -134,6 +184,7 @@ function MultiBot.BuildDisperseUI(tLeft)
 
     local function showDisperseMenu()
         menuOpen = true
+        lastDistance = savedDistance()
         input:SetText(lastDistance)
         menu:Show()
         setDisperseMenuChildrenShown(true)
@@ -146,7 +197,7 @@ function MultiBot.BuildDisperseUI(tLeft)
 
     MultiBot.frames.disperseMenu = menu
 
-    button = tLeft.addButton("Disperse", -34, 0, "spell_nature_wispsplode", L("tips.disperse.main", "Disperse")).setDisable().doHide()
+    button = tLeft.addButton("Disperse", buttonX, 0, "spell_nature_wispsplode", L("tips.disperse.main", "Disperse")).setDisable()
     button.doLeft = function()
         if menuOpen then
             hideDisperseMenu()
@@ -161,6 +212,7 @@ function MultiBot.BuildDisperseUI(tLeft)
     end
 
     hideDisperseMenu()
+    setDisperseActiveVisual(nil)
 
     MultiBot.frames.disperse = button
     return button

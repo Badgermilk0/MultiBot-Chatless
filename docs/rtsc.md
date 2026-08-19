@@ -114,7 +114,12 @@ repurposed.
 ## The bar
 
 Left of centre: nine location slots (`MACRO<i>` when empty, `RTSC<i>` when filled, same position).
-Right of centre: group/role selector buttons, `@all`, Browse, then Move / Last / Here.
+Right of centre: group/role selector buttons, `@all`, Browse, then Move / Last / Here. Two hairline
+separators mark the three blocks (spots · selection · actions).
+
+Each slot carries its **number** on the face — grey digits when empty, gold when a spot is stored.
+Both faces use the same icon and the same position, so without the digit there is nothing to tell
+slot 3 from slot 7.
 
 | Control | Action |
 |---|---|
@@ -134,9 +139,37 @@ Right of centre: group/role selector buttons, `@all`, Browse, then Move / Last /
 | Last, left / right | `last` / re-read state from the bridge |
 | Here, left | `here` (bridge only; hidden when the bridge is down) |
 
+`/mb help rtsc` prints this table in game.
+
 Left and right differ on the secure buttons even when they send the same command: only `type1` is
 set, so **only left-click casts**. Modified clicks set an empty `shift-type1` / `ctrl-type1` so
 they do not open a reticle the action does not want.
 
 **Closing the bar sends `cancel`, never `reset`.** The old behaviour wiped every saved location
 and untrained the master's spell every time the panel was closed.
+
+## Reading the bar's state
+
+Three things the bar reports, all of which used to be invisible and made RTSC look broken rather
+than un-set-up:
+
+- **Marker spell not learned** (`IsSpellKnown(30758)` false) — every control that only means
+  something *followed by a ground cast* is faded to 35% alpha, the root button greys, and its
+  tooltip carries the fix in red. Alpha is deliberately not `setDisable()`: the slot buttons
+  already use desaturation for empty-vs-filled and that meaning has to survive. Attempting one of
+  the arming sub-commands (`select`, `move`, `save <n>`, `save selected <n>`) also prints the hint.
+- **A command reached no bot** — `RTSC_ACK` has always carried `executed`, and the addon used to
+  discard the whole payload. `MultiBot.OnRtscCommandApplied(command, executed)` now reports a zero
+  (throttled per command kind). Same treatment for `POSITION_ACK`
+  (`MultiBot.OnPositionCommandApplied`), which previously stayed silent when disperse applied to
+  nobody.
+- **The pending selector** — the accumulated `@tag` list from right-clicks appears in the root
+  button's tooltip next to the selected-bot count.
+
+`Browse` tracks which row it shows in `browseButton.showingGroups`, **not** in `button.state`:
+`state` is the engine's enable/desaturation flag, and writing it raw left the button's appearance
+permanently out of step with its logical state.
+
+Opening the panel retries `GET~RTSC` until the bridge answers (5 tries, 0.75 s apart). A single
+request could lose the race with the handshake, and the bar then rendered empty slots from local
+bookkeeping — indistinguishable from "my saved spots are gone".

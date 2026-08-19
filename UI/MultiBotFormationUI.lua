@@ -3,7 +3,6 @@ if not MultiBot then return end
 local FORMATION_FRAME_NAME = "Format"
 local FORMATION_BUTTON_NAME = "Format"
 local FORMATION_DEFAULT_ICON = "Interface\\AddOns\\MultiBot\\Icons\\formation_near.blp"
-local FORMATION_FRAME_X = -2
 local FORMATION_FRAME_Y = 34
 local FORMATION_CELL_WIDTH = 40
 local FORMATION_CELL_HEIGHT = 30
@@ -36,9 +35,10 @@ function MultiBot.BuildFormationUI(tLeft)
         return nil
     end
 
+    local buttonX = MultiBot.GetLeftBarSlotX(FORMATION_BUTTON_NAME)
     local formatButton = tLeft.addButton(
         FORMATION_BUTTON_NAME,
-        0,
+        buttonX,
         0,
         FORMATION_DEFAULT_ICON,
         MultiBot.L("tips.format.master")
@@ -52,7 +52,7 @@ function MultiBot.BuildFormationUI(tLeft)
         MultiBot.ActionToGroup("formation")
     end
 
-    local formatFrame = tLeft.addFrame(FORMATION_FRAME_NAME, FORMATION_FRAME_X, FORMATION_FRAME_Y)
+    local formatFrame = tLeft.addFrame(FORMATION_FRAME_NAME, buttonX - 2, FORMATION_FRAME_Y)
     formatFrame:Hide()
 
     for index, definition in ipairs(FORMATION_BUTTONS) do

@@ -349,11 +349,10 @@ local MAINBAR_STATE_KEYS = {
 	"NecroNet",
 	"Reward",
 	"Masters",
+	-- Creator/Beast are no longer main-menu toggles; they are Options -> Layout checkboxes that
+	-- reuse these same keys, so their saved value still has to migrate with the rest.
 	"Creator",
 	"Beast",
-	"Disperse",
-	"Loot",
-	"Expand",
 	"RTSC",
 }
 
@@ -1055,21 +1054,6 @@ local function restoreMainBarSavedStates()
 	end, function()
 		MultiBot.GM = true
 	end)
-	restoreEnableOnlyLeftToggle("Creator", function()
-		return getMainBarButton("Creator")
-	end)
-	restoreEnableOnlyLeftToggle("Beast", function()
-		return getMainBarButton("Beast")
-	end)
-	restoreEnableOnlyLeftToggle("Disperse", function()
-		return getMainBarButton("Disperse")
-	end)
-	restoreEnableOnlyLeftToggle("Loot", function()
-		return getMainBarButton("Loot")
-	end)
-	restoreEnableOnlyLeftToggle("Expand", function()
-		return getMainBarButton("Expand")
-	end)
 	restoreEnableOnlyLeftToggle("RTSC", function()
 		return getMainBarButton("RTSC")
 	end, function()
@@ -1078,8 +1062,8 @@ local function restoreMainBarSavedStates()
 		end
 	end)
 
-	if MultiBot.RefreshLeftLayout then
-		MultiBot.RefreshLeftLayout()
+	if MultiBot.ApplyToolbarVisibility then
+		MultiBot.ApplyToolbarVisibility()
 	end
 end
 
@@ -1523,12 +1507,10 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 		setSavedMainBarValue("Reward", MultiBot.IF(MultiBot.reward.state, "true", "false"))
 
 		setSavedMainBarValue("Masters", mainButtonState("Masters"))
-		setSavedMainBarValue("Creator", mainButtonState("Creator"))
-		setSavedMainBarValue("Beast", mainButtonState("Beast"))
-		setSavedMainBarValue("Disperse", mainButtonState("Disperse"))
-		setSavedMainBarValue("Loot", mainButtonState("Loot"))
-		setSavedMainBarValue("Expand", mainButtonState("Expand"))
 		setSavedMainBarValue("RTSC", mainButtonState("RTSC"))
+		-- Creator/Beast are deliberately NOT written here any more: they are Options -> Layout
+		-- checkboxes now, so there is no main-menu button to read a state from and this would
+		-- overwrite the user's choice with "false" on every logout.
 
 		return
 	end
@@ -2557,12 +2539,6 @@ MultiBot:SetScript("OnEvent", function(_, eventName, ...)
 	MultiBot.DispatchEvent(eventName, ...)
 end)
 
-local function ToggleMultiBotUI()
-	if MultiBot.ToggleMainUIVisibility then
-		MultiBot.ToggleMainUIVisibility()
-	end
-end
-
 local function printToChat(message)
   if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
     DEFAULT_CHAT_FRAME:AddMessage(message)
@@ -2844,8 +2820,86 @@ local function DebugCommand(msg)
   printToChat("[MB] Action inconnue: " .. action)
 end
 
+-- /mb was a bare toggle and the other twelve slash commands had no way to be discovered.
+local HELP_LINES = {
+  "|cffffcc00/mb|r - show or hide the MultiBot bars",
+  "|cffffcc00/mb show|r, |cffffcc00/mb hide|r - force the bars visible or hidden",
+  "|cffffcc00/mb options|r (or |cffffcc00/mbopt|r) - open the options panel",
+  "|cffffcc00/mb help rtsc|r - RTSC bar cheat sheet",
+  "|cffffcc00/mbhelp|r - this list",
+  "|cffffcc00/mbdebug|r - debug flags and perf counters (|cffffcc00/mbdebug list|r)",
+  "|cffffcc00/mbclass|r, |cffffcc00/mbclasstest|r - class detection helpers",
+  "|cffffcc00/mbfakegm|r - toggle the GM controls locally",
+  "|cffffcc00/mblx|r, |cffffcc00/mbll|r, |cffffcc00/mbli|r, |cffffcc00/mblio|r, |cffffcc00/mblp|r - bar layout export / list / import / show",
+  "|cffffcc00/mbldel|r, |cffffcc00/mblreset|r - delete a saved layout / reset the bar layout",
+  "|cffffcc00/mbdelsv|r - wipe the global bot SavedVariables (asks first)",
+}
+
+-- The RTSC model (arm an action, then place it with a ground cast) is not guessable from the
+-- icons; see docs/rtsc.md for the long version.
+local RTSC_HELP_LINES = {
+  "|cff33ff99MultiBot RTSC|r - mark a spot on the ground and send bots to it.",
+  "Nothing carries coordinates: a control |cffffcc00arms|r what your next marker cast does.",
+  "|cffffcc00RTSC button|r right-click: learn the marker spell (do this first).",
+  "|cffffcc00Spots 1-9|r left-click when grey: arm a save, then cast the marker.",
+  "|cffffcc00Spots 1-9|r shift+left-click: snapshot where every bot stands right now.",
+  "|cffffcc00Spots 1-9|r left-click when lit: send bots there. Ctrl+left: preview it. Right-click: forget it.",
+  "|cffffcc00Role / group icons|r left-click: select + cast. Right-click: add to a multi-role selection.",
+  "|cffffcc00Browse|r left-click: swap the role row for the group row. Right-click: clear the selection.",
+  "|cffffcc00Move|r: every later cast moves the selection. |cffffcc00Last|r: back to the newest mark.",
+  "|cffffcc00Here|r: regroup on your exact position, in formation, with no cast (bridge only).",
+  "|cffffcc00RTSC button|r shift+right-click: reset - wipes every saved spot on every bot.",
+}
+
+local function HelpCommand(msg)
+  local topic = string.lower(string.match(tostring(msg or ""), "^%s*(%S*)") or "")
+  local lines = (topic == "rtsc") and RTSC_HELP_LINES or HELP_LINES
+
+  if topic ~= "rtsc" then
+    printToChat("|cff33ff99MultiBot|r commands:")
+  end
+
+  for _, line in ipairs(lines) do
+    printToChat(line)
+  end
+end
+
+local function ToggleMultiBotUI(msg)
+  local action, rest = string.match(tostring(msg or ""), "^%s*(%S*)%s*(.-)%s*$")
+  action = string.lower(action or "")
+
+  if action == "help" or action == "?" then
+    HelpCommand(rest)
+    return
+  end
+
+  if action == "options" or action == "config" then
+    if MultiBot.ToggleOptionsPanel then
+      MultiBot.ToggleOptionsPanel()
+    end
+    return
+  end
+
+  if action == "show" or action == "hide" then
+    if MultiBot.ToggleMainUIVisibility then
+      MultiBot.ToggleMainUIVisibility(action == "show")
+    end
+    return
+  end
+
+  if action ~= "" then
+    printToChat("|cff33ff99MultiBot|r unknown option '" .. action .. "'. Try |cffffcc00/mb help|r.")
+    return
+  end
+
+  if MultiBot.ToggleMainUIVisibility then
+    MultiBot.ToggleMainUIVisibility()
+  end
+end
+
 local COMMAND_DEFINITIONS = {
   { "MULTIBOT", ToggleMultiBotUI, { "multibot", "mbot", "mb" } },
+  { "MBHELP", HelpCommand, { "mbhelp" } },
   { "MBFAKEGM", FakeGMCommand, { "mbfakegm" } },
   { "MBCLASS", ClassCommand, { "mbclass" } },
   { "MBCLASSTEST", ClassTestCommand, { "mbclasstest" } },

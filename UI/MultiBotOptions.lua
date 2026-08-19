@@ -77,6 +77,22 @@ local function importLayoutOwner(ownerKey)
   return MultiBot.ImportSavedMainBarLayout(ownerKey)
 end
 
+-- Optional left-toolbar buttons. These used to be on/off switches in the main menu; bar
+-- composition belongs with the other layout settings, so they live here now.
+local TOOLBAR_BUTTON_OPTIONS = {
+  { key = "Creator", label = "options.layout.show_creator", desc = "options.layout.show_creator_desc" },
+  { key = "Beast", label = "options.layout.show_beast", desc = "options.layout.show_beast_desc" },
+}
+
+local function setToolbarButtonVisible(key, visible)
+  if MultiBot.SetToolbarButtonVisible then
+    MultiBot.SetToolbarButtonVisible(key, visible)
+  end
+  if MultiBot.ApplyToolbarVisibility then
+    MultiBot.ApplyToolbarVisibility()
+  end
+end
+
 local function makeSlider(parent, key, label, minV, maxV, step, y)
   local name = PANEL_NAME .. "_" .. key .. "_Slider"
   local s = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
@@ -229,8 +245,23 @@ local function buildLegacyOptionsContent(panel)
     end
   end)
 
+  local toolbarAnchor = chkLootMasterUI
+  panel.toolbarChecks = {}
+  for _, definition in ipairs(TOOLBAR_BUTTON_OPTIONS) do
+    local check = CreateFrame("CheckButton", "MultiBot_Toolbar" .. definition.key .. "Check", scrollChild, "InterfaceOptionsCheckButtonTemplate")
+    check:SetPoint("TOPLEFT", toolbarAnchor, "BOTTOMLEFT", 0, -8)
+    _G[check:GetName() .. "Text"]:SetText(optL(definition.label))
+    check.tooltipText = optL(definition.desc)
+    check:SetChecked(MultiBot.GetToolbarButtonVisible and MultiBot.GetToolbarButtonVisible(definition.key) or false)
+    check:SetScript("OnClick", function(btn)
+      setToolbarButtonVisible(definition.key, btn:GetChecked() and true or false)
+    end)
+    panel.toolbarChecks[definition.key] = check
+    toolbarAnchor = check
+  end
+
   local chkMainBarAutoHide = CreateFrame("CheckButton", "MultiBot_MainBarAutoHideCheck", scrollChild, "InterfaceOptionsCheckButtonTemplate")
-  chkMainBarAutoHide:SetPoint("TOPLEFT", chkLootMasterUI, "BOTTOMLEFT", 0, -8)
+  chkMainBarAutoHide:SetPoint("TOPLEFT", toolbarAnchor, "BOTTOMLEFT", 0, -8)
   _G[chkMainBarAutoHide:GetName() .. "Text"]:SetText(optL("options.layout.mainbar_autohide"))
   chkMainBarAutoHide.tooltipText = optL("options.layout.mainbar_autohide_desc")
   chkMainBarAutoHide:SetChecked(mainBarAutoHideEnabled and true or false)
@@ -669,6 +700,22 @@ function MultiBot.BuildOptionsPanel()
       end)
       scroll:AddChild(chkLootMasterUI)
       panel.chkLootMasterUI = chkLootMasterUI
+
+      panel.toolbarChecks = {}
+      for _, definition in ipairs(TOOLBAR_BUTTON_OPTIONS) do
+        local check = AceGUI:Create("CheckBox")
+        check:SetLabel(optL(definition.label))
+        if check.SetDescription then
+          check:SetDescription(optL(definition.desc))
+        end
+        check:SetValue(MultiBot.GetToolbarButtonVisible and MultiBot.GetToolbarButtonVisible(definition.key) or false)
+        check:SetFullWidth(true)
+        check:SetCallback("OnValueChanged", function(_, _, value)
+          setToolbarButtonVisible(definition.key, value and true or false)
+        end)
+        scroll:AddChild(check)
+        panel.toolbarChecks[definition.key] = check
+      end
 
       local autoHideDelaySlider = AceGUI:Create("Slider")
       autoHideDelaySlider:SetLabel(optL("options.layout.mainbar_autohide_delay"))

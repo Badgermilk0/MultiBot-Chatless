@@ -46,6 +46,16 @@ local RTSC_BROWSE_GROUPS = { "@group1", "@group2", "@group3", "@group4", "@group
 -- Optimistic slot bookkeeping, used only while the bridge cannot tell us the real server state.
 local localSlots = {}
 local rtscUI = nil
+-- Every button whose click only means something once the master knows the marker spell. They are
+-- greyed as a block until then: leaving them bright while they are inert is the single biggest
+-- source of "RTSC is buggy / does not do what it says".
+local castButtons = {}
+local lastReportedAt = {}
+local rtscStateRetries = 0
+
+local RTSC_STATE_RETRY_LIMIT = 5
+local RTSC_STATE_RETRY_DELAY = 0.75
+local RTSC_REPORT_INTERVAL = 8
 
 local function L(key, fallback)
     if MultiBot and type(MultiBot.L) == "function" then
@@ -79,6 +89,7 @@ local function addAedmMacro(button)
     -- secure handler from falling back to the plain one and opening a reticle we do not want.
     button:SetAttribute("shift-type1", "")
     button:SetAttribute("ctrl-type1", "")
+    table.insert(castButtons, button)
     return button
 end
 
@@ -127,6 +138,42 @@ local function selectedCount()
     return state and state.selected or 0
 end
 
+local function rtscNow()
+    return (type(GetTime) == "function") and GetTime() or 0
+end
+
+local function rtscMessage(text)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99MultiBot|r " .. tostring(text or ""))
+    end
+end
+
+-- One line per kind per RTSC_REPORT_INTERVAL: these fire from click handlers, and a user poking a
+-- dead button repeatedly should not fill the chat frame.
+local function rtscMessageThrottled(kind, text)
+    local last = lastReportedAt[kind]
+    local now = rtscNow()
+
+    if last and (now - last) < RTSC_REPORT_INTERVAL then
+        return false
+    end
+
+    lastReportedAt[kind] = now
+    rtscMessage(text)
+    return true
+end
+
+-- Sub-commands that only *arm* what the next ground cast will do (see docs/rtsc.md). They are
+-- inert without the marker spell, so they are the ones worth warning about.
+local function needsMarkerCast(sub)
+    if sub == "select" or sub == "move" then
+        return true
+    end
+
+    return string.match(sub or "", "^save%s+%d+$") ~= nil
+        or string.match(sub or "", "^save selected%s+%d+$") ~= nil
+end
+
 -- Chat wording for the sub-commands that have one. `here` and `persist` are bridge-only.
 local function chatSubCommand(sub)
     if sub == "enable" then
@@ -145,6 +192,13 @@ end
 -- PlayerbotAI::HandleCommand applies exactly the same filtering party chat would.
 local function sendRtsc(sub, tag)
     local comm = MultiBot.Comm
+
+    if needsMarkerCast(sub) and not aedmKnown() then
+        rtscMessageThrottled("spell", L(
+            "rtsc.spell.missing",
+            "You have not learned the RTSC marker spell yet - right-click the RTSC button to learn it."
+        ))
+    end
 
     if comm and type(comm.RunRtscCommand) == "function" then
         local command = tag and (tag .. " " .. sub) or sub
@@ -171,6 +225,25 @@ local function requestRtscState()
     return false
 end
 
+-- The handshake can still be in flight when the panel opens; a single request that fails then left
+-- the bar rendering empty slots from local bookkeeping, which reads as "my saved spots are gone".
+-- Retry until the bridge answers, like RequestBridgeSnapshot does for the roster.
+local function requestRtscStateUntilConnected()
+    if requestRtscState() then
+        rtscStateRetries = 0
+        return true
+    end
+
+    if rtscStateRetries >= RTSC_STATE_RETRY_LIMIT or type(MultiBot.TimerAfter) ~= "function" then
+        rtscStateRetries = 0
+        return false
+    end
+
+    rtscStateRetries = rtscStateRetries + 1
+    MultiBot.TimerAfter(RTSC_STATE_RETRY_DELAY, requestRtscStateUntilConnected)
+    return false
+end
+
 local function refreshSlotButtons()
     if not rtscUI then
         return
@@ -190,6 +263,20 @@ local function refreshSlotButtons()
                 slotButton.doHide()
                 macroButton.doShow()
             end
+        end
+    end
+end
+
+-- Fade every button that only does something once a ground cast follows it. Alpha is used rather
+-- than setEnable/setDisable on purpose: the slot buttons already use desaturation to mean
+-- "empty vs filled", and that meaning must survive.
+local function refreshCastAvailability()
+    local available = aedmKnown()
+    local rootButton = rtscUI and rtscUI.rootButton
+
+    for _, button in ipairs(castButtons) do
+        if button ~= rootButton and button.SetAlpha then
+            button:SetAlpha(available and 1 or 0.35)
         end
     end
 end
@@ -218,6 +305,8 @@ local function refreshModeButtons()
         end
     end
 
+    refreshCastAvailability()
+
     -- Grey the root button until the master actually knows the marker spell; every cast button is
     -- inert until then, and right-clicking the root is what trains it.
     local rootButton = rtscUI.rootButton
@@ -230,11 +319,30 @@ local function refreshModeButtons()
 
         -- The bots' selection lives server-side, so report it here rather than tinting unit
         -- buttons (their state is the online flag and must not be repurposed).
-        rootButton.tip = rtscUI.rootTip
+        local tip = rtscUI.rootTip
+
+        if not aedmKnown() then
+            tip = tip .. "\n\n|cffff2020" .. L(
+                "rtsc.spell.missing",
+                "You have not learned the RTSC marker spell yet - right-click the RTSC button to learn it."
+            ) .. "|r"
+        end
+
         if bridgeRtsc() then
-            rootButton.tip = rtscUI.rootTip .. "\n\n" ..
+            tip = tip .. "\n\n" ..
                 string.format(L("rtsc.selected.count", "Bots currently selected: %d"), selectedCount())
         end
+
+        -- A half-built multi-role selection was previously invisible unless you remembered which
+        -- buttons you had right-clicked.
+        local pending = rtscUI.selectorFrame and rtscUI.selectorFrame.selector or ""
+        if pending ~= "" then
+            tip = tip .. "\n" .. string.format(L("rtsc.selector.pending", "Pending selection: %s"), pending)
+        end
+
+        tip = tip .. "\n|cff999999" .. L("rtsc.help.hint", "Type /mb help rtsc for the full control list.") .. "|r"
+
+        rootButton.tip = tip
     end
 end
 
@@ -246,6 +354,20 @@ end
 -- Called by MultiBotComm once a GET~RTSC stream completes.
 MultiBot.OnBridgeRtscState = function()
     refreshRtscUI()
+end
+
+-- Called by MultiBotComm for every RTSC_ACK. The bridge has always reported how many bots ran the
+-- command; saying nothing when that is zero is what made RTSC look broken rather than unaddressed.
+MultiBot.OnRtscCommandApplied = function(command, executed)
+    if (tonumber(executed) or 0) > 0 then
+        return
+    end
+
+    local kind = "none:" .. (string.match(tostring(command or ""), "([%a]+)") or "rtsc")
+    rtscMessageThrottled(kind, string.format(
+        L("rtsc.applied.none", "RTSC: no bot ran '%s'. Bots must be grouped with you and in range."),
+        tostring(command or "")
+    ))
 end
 
 local function refreshRtscStateSoon(persist)
@@ -319,6 +441,21 @@ local function createSelectorButton(selectorFrame, definition)
     return button
 end
 
+-- The nine spot buttons share one icon and one position each, so without a number on the face
+-- there is no way to tell slot 3 from slot 7 - the empty/filled desaturation is the only other
+-- cue. Grey digits for an empty slot, gold for a stored one.
+local function labelStorageButton(button, index, filled)
+    button.setAmount(tostring(index))
+
+    if button.amount and button.amount.SetTextColor then
+        if filled then
+            button.amount:SetTextColor(1, 0.82, 0)
+        else
+            button.amount:SetTextColor(0.6, 0.6, 0.6)
+        end
+    end
+end
+
 local function createStoragePair(selectorFrame, index)
     local macroName = "MACRO" .. index
     local rtscName = "RTSC" .. index
@@ -327,6 +464,8 @@ local function createStoragePair(selectorFrame, index)
     local macroButton = addAedmMacro(selectorFrame
         .addButton(macroName, x, 0, RTSC_STORAGE_ICON, L("tips.rtsc.macro"), "SecureActionButtonTemplate"))
         .setDisable()
+
+    labelStorageButton(macroButton, index, false)
 
     macroButton.doLeft = function(button)
         -- Shift stores where the bots are standing *right now* - each bot records its own spot, so
@@ -358,6 +497,8 @@ local function createStoragePair(selectorFrame, index)
     local slotButton = selectorFrame
         .addButton(rtscName, x, 0, RTSC_STORAGE_ICON, L("tips.rtsc.spot"), "SecureActionButtonTemplate")
         .doHide()
+
+    labelStorageButton(slotButton, index, true)
 
     slotButton.doRight = function()
         sendRtsc("unsave " .. index)
@@ -440,15 +581,18 @@ local function bindSelectorLogic(selectorFrame)
         end
 
         button.parent.selector = ""
+        refreshModeButtons()
     end
 
     selectorFrame.doSelect = function(button, selector)
         if button.parent.selector == "" then
             button.parent.selector = selector
-            return
+        else
+            button.parent.selector = button.parent.selector .. " " .. selector
         end
 
-        button.parent.selector = button.parent.selector .. " " .. selector
+        -- Keep the root tooltip's "Pending selection" line honest.
+        refreshModeButtons()
     end
 
     selectorFrame.doReset = function(frame)
@@ -463,11 +607,18 @@ local function bindSelectorLogic(selectorFrame)
             end
         end
         frame.selector = ""
+        refreshModeButtons()
     end
 end
 
 local function createBrowseButton(selectorFrame)
     local browseButton = selectorFrame.addButton("Browse", 270, 0, "Interface\\AddOns\\MultiBot\\Icons\\rtsc_browse.blp", MultiBot.L("tips.rtsc.browse"))
+
+    -- `state` belongs to the engine (it drives setEnable/setDisable and the desaturation), so the
+    -- "which row am I showing" flag gets its own field. Writing state raw meant the button's look
+    -- and its logical state permanently disagreed, and you could not see which row you were on.
+    browseButton.showingGroups = false
+    browseButton.setDisable()
 
     browseButton.doRight = function(button)
         sendRtsc("cancel")
@@ -476,28 +627,49 @@ local function createBrowseButton(selectorFrame)
 
     browseButton.doLeft = function(button)
         local frame = button.parent
-
-        if button.state then
-            for _, tag in ipairs(RTSC_BROWSE_ROLES) do
-                frame.buttons[tag].doShow()
-            end
-            for _, tag in ipairs(RTSC_BROWSE_GROUPS) do
-                frame.buttons[tag].doHide()
-            end
-            button.state = false
-            return
-        end
+        local showGroups = not button.showingGroups
 
         for _, tag in ipairs(RTSC_BROWSE_ROLES) do
-            frame.buttons[tag].doHide()
+            if frame.buttons[tag] then
+                if showGroups then
+                    frame.buttons[tag].doHide()
+                else
+                    frame.buttons[tag].doShow()
+                end
+            end
         end
+
         for _, tag in ipairs(RTSC_BROWSE_GROUPS) do
-            frame.buttons[tag].doShow()
+            if frame.buttons[tag] then
+                if showGroups then
+                    frame.buttons[tag].doShow()
+                else
+                    frame.buttons[tag].doHide()
+                end
+            end
         end
-        button.state = true
+
+        button.showingGroups = showGroups
+        if showGroups then
+            button.setEnable()
+        else
+            button.setDisable()
+        end
     end
 
     return browseButton
+end
+
+-- The row runs saved spots -> selection -> actions with nothing to say where one block ends. Two
+-- hairlines make the 22 buttons readable as three groups.
+local function createSeparator(selectorFrame, x)
+    local separator = selectorFrame:CreateTexture(nil, "OVERLAY")
+    separator:SetTexture("Interface\\Buttons\\WHITE8X8")
+    separator:SetVertexColor(1, 1, 1, 0.25)
+    separator:SetWidth(1)
+    separator:SetHeight(24)
+    separator:SetPoint("BOTTOMRIGHT", selectorFrame, "BOTTOMRIGHT", x, 2)
+    return separator
 end
 
 -- Move / Last / Here sit right of Browse so the existing -274..270 layout is untouched.
@@ -548,7 +720,8 @@ end
 -- server state so the slots render from it instead of from stale UI bookkeeping.
 function MultiBot.RTSCOnPanelOpen()
     sendRtsc("enable")
-    requestRtscState()
+    rtscStateRetries = 0
+    requestRtscStateUntilConnected()
     refreshRtscUI()
 end
 
@@ -626,6 +799,12 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
 
     local browseButton = createBrowseButton(selectorFrame)
     local moveButton, lastButton, hereButton = createModeButtons(selectorFrame)
+
+    -- Buttons are 28 wide on a 30 pitch, so the only real gap is between the last spot slot
+    -- (right edge -34) and the first selector icon (left edge +2); the second hairline goes in the
+    -- 2px gap between Browse (270) and Move (300).
+    createSeparator(selectorFrame, -16)
+    createSeparator(selectorFrame, 271)
 
     rtscUI = {
         frame = rtscFrame,

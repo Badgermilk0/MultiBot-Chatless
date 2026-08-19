@@ -12,7 +12,6 @@
 * Raidus : rafraîchir correctement à l'ouverture et à la fermeture.
 * Raidus : ajouter un bouton pour enlever les bots inconnus et les supprimer aussi des SavedVariables.
 * Talents / glyphes : revoir `UI/MultiBotTalent`, car il y a eu des modifications dans le fichier `.conf` de MultiBot.
-* J'ai l'impression que le disperse ne fait rien
 * Refaire uns passe pour que toutes les frames respectent le strata de la config.
 * Retravailler la frame pvp stats qu'elle ressemble aux autres, et ajuster l'alignement du texte
 * Faire une UI pour enchanter les objets à moins qu'on arrive à faire le bot caster le spell sur la fenêtre de trade.
@@ -54,6 +53,11 @@
 
 ## Améliorations UI encore ouvertes
 
+* Units : ajouter un champ de recherche par nom dans la liste des bots (la pagination a un
+  compteur de page, mais pas de filtre texte).
+* RTSC : l'ouverture du panneau décale encore toute la MultiBar de 34 px vers le haut
+  (`toggleRTSC`), et la restauration au login refait le décalage inverse. À remplacer par un
+  ancrage propre quand on touchera au layout de la MultiBar.
 * Uniformiser le template de la frame reward avec le style d'Itemus.
 * Ajouter une option pour choisir la taille des icônes de la main bar et des Quick Shaman / Quick Hunter.
 * Voir quelles autres options utiles peuvent être ajoutées à la frame options de MultiBot.
@@ -224,6 +228,31 @@
 * Gestion de profils UI.
 * Bouton pour cacher Quick Shaman et Quick Hunter.
 * Options de déplacement de boutons commencées.
+* Passe de simplification (août 2026) :
+  * Barre de gauche à **emplacements fixes** (`MultiBot.GetLeftBarSlotX`, défini dans
+    `Core/MultiBot.lua`) : plus de reflow dynamique. `refreshLeftLayout` (~190 lignes dans
+    `MultiBotMainUI`) supprimé — il était un second propriétaire des positions et écrasait
+    silencieusement les échanges de boutons persistés par `BindShiftRightSwapButtons`.
+    Invalidation unique de `ButtonLayout:LeftRoot` au premier chargement (`leftBarSlotVersion`).
+  * `Disperse` et `Loot` toujours visibles ; l'interrupteur « Switch Disperse » est supprimé.
+  * `Stay`/`Follow` : 4 boutons (dont le doublon `ExpandStay`/`ExpandFollow`) réduits à 2,
+    toujours visibles et mutuellement exclusifs. L'interrupteur « Expand » est supprimé.
+  * Visibilité de `Creator` / `Beast` déplacée dans Options → Layout (mêmes clés sauvegardées,
+    le choix existant est conservé) ; ces deux boutons sont placés à l'extrémité de la barre pour
+    que les afficher/masquer ne déplace plus rien.
+  * Menu principal : 16 → 11 entrées, regroupées panneaux → comportement → actions → GM.
+  * Boutons racines : l'état allumé signifie désormais « fonction active » et non « menu ouvert »
+    (Disperse affiche la distance en cours, Loot s'allume quand le loot bot est activé).
+  * Nouvelles sous-commandes `/mb help`, `/mb help rtsc`, `/mb show`, `/mb hide`, `/mb options`.
+  * Units : la pagination a un bouton page précédente (clic droit) et un compteur `page/total`.
+  * Correction : `ActionToGroup` / `ActionToTargetOrGroup` testaient `GetNumRaidMembers() > 5`.
+    Comme `GetNumPartyMembers()` renvoie 0 en raid, **toutes** les commandes de groupe (stay,
+    follow, attack, flee, formation, mode, tanker) échouaient silencieusement dans un raid de 5 ou
+    moins. Corrigé en `> 0`, comme `isMember`/`toUnit` l'avaient déjà été.
+  * RTSC : emplacements numérotés, contrôles estompés + message tant que le sort de marquage n'est
+    pas appris, retour quand une commande n'atteint aucun bot (`RTSC_ACK` / `POSITION_ACK`
+    exposaient déjà `executed`, l'addon le jetait), sélection en attente affichée dans l'infobulle,
+    `Browse` n'écrase plus `button.state`, et `GET~RTSC` est réessayé à l'ouverture du panneau.
 
 ### Iconos / Itemus / templates
 

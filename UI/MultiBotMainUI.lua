@@ -8,228 +8,8 @@ local MAIN_FRAME_Y = 38
 local MULTIBAR_LAYOUT_KEY = "MultiBarPoint"
 local MAINBAR_BUTTON_ORDER_LAYOUT_KEY = "MainBarButtonsOrder"
 local MAINBAR_BUTTON_STEP_Y = 34
-local LEFT_LAYOUT_SHIFT = 34
 local MAINBAR_AUTOHIDE_HOTSPOT_SIZE = 42
 local MAINBAR_AUTOHIDE_UPDATE_INTERVAL = 0.2
-
-local LEFT_LAYOUT_NAMES = {
-    "Creator",
-    "Beast",
-    "Disperse",
-    "Loot",
-    "BotRTI",
-    "Tanker",
-    "Attack",
-    "Mode",
-    "Stay",
-    "Follow",
-    "ExpandStay",
-    "ExpandFollow",
-    "Flee",
-    "Format",
-    "Beast",
-}
-
-local LEFT_LAYOUT_FRAME_NAMES = {
-    BotRTI = "BotRTIAction",
-    Disperse = "DisperseMenu",
-    Loot = "LootMenu",
-}
-
-local PRE_FORMAT_LEFT_TOGGLE_ORDER = {
-    "Creator",
-    "Beast",
-}
-
-local POST_FORMAT_LEFT_TOGGLE_ORDER = {
-    "Disperse",
-    "Loot",
-}
-
-local leftLayoutBase = nil
-
-local function withLeftRoot(callback)
-    local multibar = MultiBot.frames and MultiBot.frames["MultiBar"]
-    local leftRoot = multibar and multibar.frames and multibar.frames["Left"]
-    if not leftRoot then
-        return
-    end
-
-    callback(leftRoot, multibar)
-end
-
-local function getMainToggleState(name)
-    local multibar = MultiBot.frames and MultiBot.frames["MultiBar"]
-    local mainFrame = multibar and multibar.frames and multibar.frames["Main"]
-    local button = mainFrame and mainFrame.buttons and mainFrame.buttons[name]
-    return button and button.state == true
-end
-
-local function captureLeftLayoutBase(leftRoot)
-    if leftLayoutBase then
-        return
-    end
-
-    leftLayoutBase = {
-        buttons = {},
-        frames = {},
-    }
-
-    for _, name in ipairs(LEFT_LAYOUT_NAMES) do
-        local button = leftRoot.buttons and leftRoot.buttons[name]
-        if button then
-            leftLayoutBase.buttons[name] = { x = button.x, y = button.y }
-        end
-
-        local frameName = LEFT_LAYOUT_FRAME_NAMES[name] or name
-        local frame = leftRoot.frames and leftRoot.frames[frameName]
-        if frame then
-            leftLayoutBase.frames[frameName] = { x = frame.x, y = frame.y }
-        end
-    end
-end
-
-local function setLeftElementX(leftRoot, name, x)
-    local button = leftRoot.buttons and leftRoot.buttons[name]
-    if button then
-        button.setPoint(x, button.y)
-    end
-
-    local frameName = LEFT_LAYOUT_FRAME_NAMES[name] or name
-    local frame = leftRoot.frames and leftRoot.frames[frameName]
-    if frame then
-        local baseButton = leftLayoutBase and leftLayoutBase.buttons and leftLayoutBase.buttons[name]
-        local baseFrame = leftLayoutBase and leftLayoutBase.frames and leftLayoutBase.frames[frameName]
-        local frameOffset = -2
-        if baseButton and baseFrame then
-            frameOffset = baseFrame.x - baseButton.x
-        end
-        frame.setPoint(x + frameOffset, frame.y)
-    end
-end
-
-local function getLeftBaseX(leftRoot, name)
-    local baseButton = leftLayoutBase and leftLayoutBase.buttons and leftLayoutBase.buttons[name]
-    if baseButton then
-        return baseButton.x
-    end
-
-    local button = leftRoot.buttons and leftRoot.buttons[name]
-    if button then
-        return button.x
-    end
-
-    return 0
-end
-
-local function hideLeftControl(leftRoot, name)
-    local frameName = LEFT_LAYOUT_FRAME_NAMES[name] or name
-    local frame = leftRoot.frames and leftRoot.frames[frameName]
-    if frame then
-        frame:Hide()
-        if MultiBot.RequestClickBlockerUpdate then
-            MultiBot.RequestClickBlockerUpdate(frame)
-        end
-    end
-
-    local button = leftRoot.buttons and leftRoot.buttons[name]
-    if button then
-        button:Hide()
-    end
-end
-
-local function refreshLeftLayout()
-    withLeftRoot(function(leftRoot)
-        captureLeftLayoutBase(leftRoot)
-
-        if not leftLayoutBase then
-            return
-        end
-
-        local preShift = 0
-        local postVisibleCount = 0
-        local expandEnabled = getMainToggleState("Expand")
-
-        for _, name in ipairs(PRE_FORMAT_LEFT_TOGGLE_ORDER) do
-            local button = leftRoot.buttons and leftRoot.buttons[name]
-            local enabled = getMainToggleState(name)
-
-            if button then
-                if enabled then
-                    setLeftElementX(leftRoot, name, -preShift)
-                    button:Show()
-                    preShift = preShift + LEFT_LAYOUT_SHIFT
-                else
-                    hideLeftControl(leftRoot, name)
-                end
-            end
-        end
-
-        local formatX = getLeftBaseX(leftRoot, "Format") - preShift
-        setLeftElementX(leftRoot, "Format", formatX)
-
-        local postX = formatX - LEFT_LAYOUT_SHIFT
-        for _, name in ipairs(POST_FORMAT_LEFT_TOGGLE_ORDER) do
-            local button = leftRoot.buttons and leftRoot.buttons[name]
-            local enabled = getMainToggleState(name)
-
-            if button then
-                if enabled then
-                    setLeftElementX(leftRoot, name, postX)
-                    button:Show()
-                    postVisibleCount = postVisibleCount + 1
-                    postX = postX - LEFT_LAYOUT_SHIFT
-                else
-                    hideLeftControl(leftRoot, name)
-                end
-            end
-        end
-
-        local commonShift = -preShift + ((#POST_FORMAT_LEFT_TOGGLE_ORDER - postVisibleCount) * LEFT_LAYOUT_SHIFT)
-        local heavyShift = commonShift
-        if expandEnabled then
-            heavyShift = heavyShift - LEFT_LAYOUT_SHIFT
-        end
-
-        setLeftElementX(leftRoot, "BotRTI", getLeftBaseX(leftRoot, "BotRTI") + heavyShift)
-        setLeftElementX(leftRoot, "Tanker", getLeftBaseX(leftRoot, "Tanker") + heavyShift)
-        setLeftElementX(leftRoot, "Attack", getLeftBaseX(leftRoot, "Attack") + heavyShift)
-        setLeftElementX(leftRoot, "Mode", getLeftBaseX(leftRoot, "Mode") + heavyShift)
-
-        setLeftElementX(leftRoot, "Stay", getLeftBaseX(leftRoot, "Stay") + commonShift)
-        setLeftElementX(leftRoot, "Follow", getLeftBaseX(leftRoot, "Follow") + commonShift)
-        setLeftElementX(leftRoot, "ExpandStay", getLeftBaseX(leftRoot, "ExpandStay") + commonShift)
-        setLeftElementX(leftRoot, "ExpandFollow", getLeftBaseX(leftRoot, "ExpandFollow") + commonShift)
-        setLeftElementX(leftRoot, "Flee", getLeftBaseX(leftRoot, "Flee") + commonShift)
-
-        if expandEnabled then
-            leftRoot.buttons["ExpandFollow"]:Show()
-            leftRoot.buttons["ExpandStay"]:Show()
-            leftRoot.buttons["Follow"]:Hide()
-            leftRoot.buttons["Stay"]:Hide()
-        else
-            leftRoot.buttons["ExpandFollow"]:Hide()
-            leftRoot.buttons["ExpandStay"]:Hide()
-
-            local followButton = leftRoot.buttons["Follow"]
-            local stayButton = leftRoot.buttons["Stay"]
-            local followShown = followButton and followButton:IsShown()
-            local stayShown = stayButton and stayButton:IsShown()
-
-            -- Garder Follow/Stay mutuellement exclusifs en layout collapsed.
-            -- On préserve l'état courant; en cas d'état ambigu, on retombe sur Stay visible.
-            if followShown and not stayShown then
-                followButton:Show()
-                stayButton:Hide()
-            else
-                stayButton:Show()
-                followButton:Hide()
-            end
-        end
-    end)
-end
-
-MultiBot.RefreshLeftLayout = refreshLeftLayout
 
 local function resetDefaultWindowPositions()
     MultiBot.frames["MultiBar"].setPoint(-363, 144)
@@ -297,40 +77,6 @@ local function toggleRaidus(button)
     end
 
     MultiBot.raidus:Hide()
-end
-
-local function toggleLeftControl(button, controlName)
-    withLeftRoot(function(leftRoot)
-        local frameName = LEFT_LAYOUT_FRAME_NAMES[controlName] or controlName
-        local frame = leftRoot.frames and leftRoot.frames[frameName]
-        if frame then
-            frame:Hide()
-        end
-
-        MultiBot.OnOffSwitch(button)
-        refreshLeftLayout()
-    end)
-end
-
-local function toggleCreator(button)
-    toggleLeftControl(button, "Creator")
-end
-
-local function toggleBeast(button)
-    toggleLeftControl(button, "Beast")
-end
-
-local function toggleDisperse(button)
-    toggleLeftControl(button, "Disperse")
-end
-
-local function toggleLoot(button)
-    toggleLeftControl(button, "Loot")
-end
-
-local function toggleExpand(button)
-    MultiBot.OnOffSwitch(button)
-    refreshLeftLayout()
 end
 
 local function toggleRelease(button)
@@ -1293,23 +1039,22 @@ function MultiBot.InitializeMainUI(tMultiBar)
 
     MultiBot.RefreshMainBarAutoHideState()
 
+    -- Grouped by what the entry does: panels first, then behaviour toggles, then one-shot
+    -- actions, then the GM control. Bar composition is no longer decided here -- the left
+    -- toolbar has fixed slots, and its two optional buttons live in Options -> Layout.
+    -- buildResolvedOrder keeps any order the user already saved, so this only affects new profiles.
     local defaultMainButtonOrder = {
-        "Coords",
-        "Masters",
+        "PullControl",
+        "CombatStrategies",
         "RTSC",
         "Raidus",
-        "Creator",
-        "Beast",
-        "Disperse",
-        "Loot",
-        "Expand",
-        "Release",
         "Stats",
         "Reward",
-        "CombatStrategies",
-        "PullControl",
+        "Release",
         "Reset",
         "Actions",
+        "Coords",
+        "Masters",
     }
     local savedOrderValue = MultiBot.GetSavedLayoutValue and MultiBot.GetSavedLayoutValue(MAINBAR_BUTTON_ORDER_LAYOUT_KEY) or nil
     local currentMainButtonOrder = buildResolvedOrder(defaultMainButtonOrder, splitCsv(savedOrderValue))
@@ -1415,66 +1160,6 @@ function MultiBot.InitializeMainUI(tMultiBar)
     wireShiftRightSwap(mainFrame.buttons["Raidus"], "Raidus")
 
     createMainActionButton(mainFrame, {
-        name = "Creator",
-        y = 136,
-        icon = "inv_helmet_145a",
-        tip = "tips.main.creator",
-        disabled = true,
-        doLeft = function(button)
-            toggleCreator(button)
-        end,
-    })
-    wireShiftRightSwap(mainFrame.buttons["Creator"], "Creator")
-
-    createMainActionButton(mainFrame, {
-        name = "Beast",
-        y = 170,
-        icon = "ability_mount_swiftredwindrider",
-        tip = "tips.main.beast",
-        disabled = true,
-        doLeft = function(button)
-            toggleBeast(button)
-        end,
-    })
-    wireShiftRightSwap(mainFrame.buttons["Beast"], "Beast")
-
-    createMainActionButton(mainFrame, {
-        name = "Disperse",
-        y = 204,
-        icon = "spell_nature_wispsplode",
-        tip = "tips.main.disperse",
-        disabled = true,
-        doLeft = function(button)
-            toggleDisperse(button)
-        end,
-    })
-    wireShiftRightSwap(mainFrame.buttons["Disperse"], "Disperse")
-
-    createMainActionButton(mainFrame, {
-        name = "Loot",
-        y = 238,
-        icon = "inv_misc_bag_10",
-        tip = "tips.main.loot",
-        disabled = true,
-        doLeft = function(button)
-            toggleLoot(button)
-        end,
-    })
-    wireShiftRightSwap(mainFrame.buttons["Loot"], "Loot")
-
-    createMainActionButton(mainFrame, {
-        name = "Expand",
-        y = 272,
-        icon = "Interface\\AddOns\\MultiBot\\Icons\\command_follow.blp",
-        tip = "tips.main.expand",
-        disabled = true,
-        doLeft = function(button)
-            toggleExpand(button)
-        end,
-    })
-    wireShiftRightSwap(mainFrame.buttons["Expand"], "Expand")
-
-    createMainActionButton(mainFrame, {
         name = "Release",
         y = 306,
         icon = "achievement_bg_xkills_avgraveyard",
@@ -1518,8 +1203,6 @@ function MultiBot.InitializeMainUI(tMultiBar)
         end,
     })
     wireShiftRightSwap(pullControlButton, "PullControl")
-
-    refreshLeftLayout()
 
     createMainActionButton(mainFrame, {
         name = "Reset",

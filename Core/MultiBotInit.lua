@@ -1,5 +1,24 @@
 MultiBot.MB_PAGE_DEFAULT = string.format("%d/%d", 0, 0)
 
+-- One-time left-toolbar layout invalidation. The bar moved to fixed slots (Stay/Follow collapsed
+-- from four buttons to two, and the optional buttons moved to the far end), so a layout saved by
+-- shift+right-click swapping on the old grid would now stack buttons on top of each other. Drop it
+-- once; individual swaps can simply be redone. This has to run before InitializeLeftCoreUI, which
+-- is where BindShiftRightSwapButtons reads the saved value back.
+do
+	local LEFT_BAR_SLOT_VERSION = 2
+	local save = _G.MultiBotSave
+
+	if type(save) == "table" and (tonumber(save.leftBarSlotVersion) or 0) < LEFT_BAR_SLOT_VERSION then
+		save["ButtonLayout:LeftRoot"] = nil
+		save.leftBarSlotVersion = LEFT_BAR_SLOT_VERSION
+
+		if MultiBot.SetSavedLayoutValue then
+			MultiBot.SetSavedLayoutValue("ButtonLayout:LeftRoot", nil)
+		end
+	end
+end
+
 -- MULTIBAR --
 local tMultiBar = MultiBot.addFrame("MultiBar", -363, 144, 36)
 MultiBot.PromoteFrame(tMultiBar)
@@ -30,6 +49,12 @@ end
 
 if MultiBot.InitializeCreatorUI then
 	MultiBot.InitializeCreatorUI(tLeft)
+end
+
+-- Creator/Beast are optional toolbar buttons; apply the saved Options -> Layout choice now that
+-- both exist.
+if MultiBot.ApplyToolbarVisibility then
+	MultiBot.ApplyToolbarVisibility()
 end
 
 if MultiBot.InitializeUnitsRootUI then

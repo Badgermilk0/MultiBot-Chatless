@@ -11,8 +11,6 @@ local ATTACK_BUTTONS = {
 
 local ATTACK_ICON = "Interface\\AddOns\\MultiBot\\Icons\\attack.blp"
 local ATTACK_FRAME_NAME = "Attack"
-local ATTACK_MAIN_X = -204
-local ATTACK_FRAME_X = -206
 local ATTACK_FRAME_Y = 34
 local ATTACK_CELL_HEIGHT = 30
 
@@ -43,8 +41,9 @@ function MultiBot.BuildAttackUI(tLeft)
         return nil
     end
 
-    local mainButton = tLeft.addButton("Attack", ATTACK_MAIN_X, 0, ATTACK_ICON, MultiBot.L("tips.attack.master"))
-    local attackFrame = tLeft.addFrame(ATTACK_FRAME_NAME, ATTACK_FRAME_X, ATTACK_FRAME_Y)
+    local buttonX = MultiBot.GetLeftBarSlotX("Attack")
+    local mainButton = tLeft.addButton("Attack", buttonX, 0, ATTACK_ICON, MultiBot.L("tips.attack.master"))
+    local attackFrame = tLeft.addFrame(ATTACK_FRAME_NAME, buttonX - 2, ATTACK_FRAME_Y)
     attackFrame:Hide()
 
     mainButton.doLeft = function()

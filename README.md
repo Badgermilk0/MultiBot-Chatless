@@ -231,11 +231,19 @@ The goal is to remove automatic UI-refresh spam.
   </tr>
   <tr>
     <td>Disperse controls</td>
-    <td><strong>Bridge-first</strong> distance set and disable actions through <code>RUN~POSITION</code></td>
+    <td><strong>Bridge-first</strong> distance set and disable actions through <code>RUN~POSITION</code>, with the active distance shown on the toolbar button and the last distance remembered</td>
   </tr>
   <tr>
     <td>Loot rules</td>
-    <td><strong>Bridge-first</strong> loot enable/disable and loot list profiles through <code>RUN~LOOT</code></td>
+    <td><strong>Bridge-first</strong> loot enable/disable and loot list profiles through <code>RUN~LOOT</code>; the toolbar button is lit while bot looting is on</td>
+  </tr>
+  <tr>
+    <td>Left toolbar</td>
+    <td><strong>Fixed slots</strong> — Disperse, Loot and Stay/Follow are always present; Creator and Beastmaster are opt-in from Options &rarr; Layout</td>
+  </tr>
+  <tr>
+    <td>RTSC bar</td>
+    <td><strong>Improved</strong> numbered location slots, faded controls plus a hint until the marker spell is learned, and a report when a command reaches no bot</td>
   </tr>
   <tr>
     <td>Loot Master frame</td>
@@ -407,6 +415,16 @@ Start World of Warcraft and use one of the following commands:
 /multibot
 /mbot
 /mb
+```
+
+`/mb` also takes a sub-command:
+
+```text
+/mb help        list every MultiBot slash command
+/mb help rtsc   cheat sheet for the RTSC bar
+/mb show        force the bars visible
+/mb hide        force the bars hidden
+/mb options     open the options panel (same as /mbopt)
 ```
 
 You can also use the minimap button.

@@ -136,6 +136,31 @@ function MultiBot.ShouldAffectMainVisibility(frameKey)
   return not MAIN_VISIBILITY_EXCLUDED_FRAMES[frameKey]
 end
 
+-- Left toolbar slots. The bar is BOTTOMRIGHT-anchored, so 0 is the rightmost slot and each step
+-- of -34 moves one button further left. This is the ONLY place these numbers live: the old
+-- refreshLeftLayout() reflow in MultiBotMainUI is gone, so nothing recomputes them at runtime and
+-- BindShiftRightSwapButtons stays the sole owner of user-moved positions.
+-- Contextual / optional buttons (BotRTI, Creator, Beast) sit at the far end on purpose: showing or
+-- hiding one of them then never moves anything else on the bar.
+local LEFT_BAR_SLOTS = {
+  Format   = 0,
+  Disperse = -34,
+  Loot     = -68,
+  Flee     = -102,
+  Stay     = -136,
+  Follow   = -170,
+  Mode     = -204,
+  Attack   = -238,
+  Tanker   = -272,
+  BotRTI   = -306,
+  Creator  = -340,
+  Beast    = -374,
+}
+
+function MultiBot.GetLeftBarSlotX(name)
+  return LEFT_BAR_SLOTS[name] or 0
+end
+
 local function setFrameVisibility(frame, visible)
   if not frame or not frame.Show or not frame.Hide then return end
   if visible then

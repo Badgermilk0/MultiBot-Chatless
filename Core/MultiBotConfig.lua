@@ -294,6 +294,91 @@ function MultiBot.SetThrottleBurst(value)
   end
 end
 
+-- Optional left-toolbar buttons (Options -> Layout). These used to be main-menu on/off switches
+-- persisted through setSavedMainBarValue as the *strings* "true"/"false", so the getter accepts
+-- both spellings and the user's existing choice carries over untouched.
+local TOOLBAR_BUTTON_DEFAULTS = {
+  Creator = false,
+  Beast = false,
+}
+
+-- Read/write through Get/SetSavedMainBarValue (MultiBotHandler) rather than poking the store
+-- directly: that path owns the legacy MultiBotSave -> profile migration, so a preference saved
+-- back when these were main-menu switches still resolves.
+local function readMainBarSetting(key)
+  if MultiBot.GetSavedMainBarValue then
+    return MultiBot.GetSavedMainBarValue(key)
+  end
+
+  local mainBar = MultiBot.Store and MultiBot.Store.GetMainBarStore and MultiBot.Store.GetMainBarStore()
+  return mainBar and mainBar[key]
+end
+
+local function writeMainBarSetting(key, value)
+  if MultiBot.SetSavedMainBarValue then
+    return MultiBot.SetSavedMainBarValue(key, value)
+  end
+
+  local mainBar = MultiBot.Store and MultiBot.Store.EnsureMainBarStore and MultiBot.Store.EnsureMainBarStore()
+  if mainBar then
+    mainBar[key] = value
+  end
+  return value
+end
+
+function MultiBot.GetToolbarButtonVisible(key)
+  local fallback = TOOLBAR_BUTTON_DEFAULTS[key]
+  if fallback == nil then
+    return false
+  end
+
+  local value = readMainBarSetting(key)
+
+  if type(value) == "boolean" then
+    return value
+  end
+  if value == "true" then
+    return true
+  end
+  if value == "false" then
+    return false
+  end
+
+  return fallback
+end
+
+function MultiBot.SetToolbarButtonVisible(key, value)
+  if TOOLBAR_BUTTON_DEFAULTS[key] == nil then
+    return false
+  end
+
+  -- Stored as the same "true"/"false" strings the old main-menu switches used, so downgrading the
+  -- addon does not lose the setting.
+  local normalized = value and true or false
+  writeMainBarSetting(key, normalized and "true" or "false")
+  return normalized
+end
+
+-- Last disperse distance, so the Disperse edit box reopens where the user left it.
+function MultiBot.GetDisperseDistance()
+  local value = tonumber(readMainBarSetting("DisperseDistance"))
+  if value and value > 0 and value <= 100 then
+    return value
+  end
+
+  return 10
+end
+
+function MultiBot.SetDisperseDistance(value)
+  value = tonumber(value)
+  if not value or value <= 0 or value > 100 then
+    return MultiBot.GetDisperseDistance()
+  end
+
+  writeMainBarSetting("DisperseDistance", tostring(value))
+  return value
+end
+
 function MultiBot.GetMainBarMoveLocked()
   local mainBar = MultiBot.Store and MultiBot.Store.GetMainBarStore and MultiBot.Store.GetMainBarStore()
   local value = mainBar and mainBar.moveLocked

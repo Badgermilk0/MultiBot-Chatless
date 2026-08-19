@@ -3592,6 +3592,21 @@ function Comm.HandleAddonMessage(prefix, message, distribution, sender)
     state.connected = true
     state.lastError = nil
     debugPrint("ADDON:RX", "RTSC_ACK", payload or "")
+
+    -- The ack has always carried `scope~target~token~executed~command`; the addon simply threw it
+    -- away, so an RTSC command that reached no bot at all was indistinguishable from one that
+    -- worked. Surface it like LOOT_ACK does.
+    local rest = select(2, splitOnce(payload or "", "~"))
+    local rest2 = select(2, splitOnce(rest, "~"))
+    local rest3 = select(2, splitOnce(rest2, "~"))
+    local executedText, encodedCommand = splitOnce(rest3, "~")
+    local executed = tonumber(executedText) or 0
+    local command = trim(urlDecodeField(encodedCommand))
+
+    if MultiBot.OnRtscCommandApplied then
+      MultiBot.OnRtscCommandApplied(command, executed)
+    end
+
     return true
   end
 
@@ -3635,17 +3650,25 @@ function Comm.HandleAddonMessage(prefix, message, distribution, sender)
     local executed = tonumber(executedText) or 0
     local command = trim(urlDecodeField(encodedCommand))
 
-    if executed > 0 then
-      local distance = string.match(command, "^disperse set%s+(.+)$")
+    if MultiBot.OnPositionCommandApplied then
+      MultiBot.OnPositionCommandApplied(command, executed)
+    end
 
-      if distance then
-        systemMessage(string.format(
-          L("disperse.confirm.set", "Disperse set to %s yards."),
-          distance
-        ))
-      elseif command == "disperse disable" then
-        systemMessage(L("disperse.confirm.disable", "Disperse disabled."))
-      end
+    if executed <= 0 then
+      -- Used to be silent, which is what "disperse seems to do nothing" actually looked like.
+      systemMessage(L("position.confirm.none", "Position command was not applied to any bot."))
+      return true
+    end
+
+    local distance = string.match(command, "^disperse set%s+(.+)$")
+
+    if distance then
+      systemMessage(string.format(
+        L("disperse.confirm.set", "Disperse set to %s yards."),
+        distance
+      ))
+    elseif command == "disperse disable" then
+      systemMessage(L("disperse.confirm.disable", "Disperse disabled."))
     end
 
     return true

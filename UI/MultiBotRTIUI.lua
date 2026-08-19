@@ -478,7 +478,7 @@ function MultiBot.BuildBotRTIActionUI(tLeft, x, y)
         return nil
     end
 
-    local buttonX = x or -306
+    local buttonX = x or MultiBot.GetLeftBarSlotX("BotRTI")
     local buttonY = y or 0
 
     local button = tLeft.addButton(

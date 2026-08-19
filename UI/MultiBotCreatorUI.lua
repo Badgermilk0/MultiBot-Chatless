@@ -21,7 +21,6 @@ local CLASS_BUTTONS = {
 
 local CREATOR_FRAME_NAME = "Creator"
 local CREATOR_ROOT_ICON = "inv_helmet_145a"
-local CREATOR_FRAME_X = -2
 local CREATOR_FRAME_Y = 34
 local GENDER_BUTTON_X = 30
 local GENDER_BUTTON_STEP = 30
@@ -138,8 +137,10 @@ function MultiBot.InitializeCreatorUI(tLeft)
         return nil
     end
 
-    local rootButton = tLeft.addButton("Creator", 0, 0, CREATOR_ROOT_ICON, MultiBot.L("tips.creator.master")).doHide()
-    local creatorFrame = tLeft.addFrame(CREATOR_FRAME_NAME, CREATOR_FRAME_X, CREATOR_FRAME_Y)
+    local buttonX = MultiBot.GetLeftBarSlotX("Creator")
+    -- Hidden until Options -> Layout says otherwise (MultiBot.ApplyToolbarVisibility).
+    local rootButton = tLeft.addButton("Creator", buttonX, 0, CREATOR_ROOT_ICON, MultiBot.L("tips.creator.master")).doHide()
+    local creatorFrame = tLeft.addFrame(CREATOR_FRAME_NAME, buttonX - 2, CREATOR_FRAME_Y)
     creatorFrame:Hide()
 
     rootButton.doLeft = function(owner)

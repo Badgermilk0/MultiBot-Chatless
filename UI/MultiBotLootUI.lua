@@ -52,8 +52,9 @@ function MultiBot.BuildLootUI(tLeft)
         return MultiBot.frames.loot
     end
 
+    local buttonX = MultiBot.GetLeftBarSlotX("Loot")
     local button
-    local menu = tLeft.addFrame("LootMenu", -73, 34, 24, 24, 170).doHide()
+    local menu = tLeft.addFrame("LootMenu", buttonX - 5, 34, 24, 24, 170).doHide()
     local menuOpen = false
     local menuButtons = {}
     local menuButtonsByKey = {}
@@ -82,6 +83,15 @@ function MultiBot.BuildLootUI(tLeft)
 
         if lootVisualState.profile and menuButtonsByKey[lootVisualState.profile] then
             menuButtonsByKey[lootVisualState.profile].setEnable()
+        end
+
+        -- The root button reports whether bot looting is on, not whether the menu is open.
+        if button then
+            if lootVisualState.enabled == true then
+                button.setEnable()
+            else
+                button.setDisable()
+            end
         end
     end
 
@@ -114,14 +124,6 @@ function MultiBot.BuildLootUI(tLeft)
                 menuButton:doShow()
             else
                 menuButton:doHide()
-            end
-        end
-
-        if button then
-            if shown then
-                button.setEnable()
-            else
-                button.setDisable()
             end
         end
 
@@ -158,7 +160,7 @@ function MultiBot.BuildLootUI(tLeft)
 
     MultiBot.frames.lootMenu = menu
 
-    button = tLeft.addButton("Loot", -68, 0, "inv_misc_bag_10", L("tips.loot.main", "Loot rules")).setDisable().doHide()
+    button = tLeft.addButton("Loot", buttonX, 0, "inv_misc_bag_10", L("tips.loot.main", "Loot rules")).setDisable()
     button.doLeft = function()
         if menuOpen then
             hideLootMenu()
@@ -173,6 +175,7 @@ function MultiBot.BuildLootUI(tLeft)
     end
 
     hideLootMenu()
+    applyLootVisualState()
 
     MultiBot.frames.loot = button
     return button

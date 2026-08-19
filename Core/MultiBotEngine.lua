@@ -470,7 +470,10 @@ MultiBot.ActionToTargetOrGroup = function(pAction)
 		return true
 	end
 
-	if(GetNumRaidMembers() > 5) then
+	-- Any raid size counts. GetNumPartyMembers() returns 0 while in a raid, so the old `> 5`
+	-- gate made every group command silently fail in a raid of 5 or fewer (same bug already
+	-- fixed in isMember/toUnit).
+	if(GetNumRaidMembers() > 0) then
 		SendChatMessage(pAction, "RAID")
 		return true
 	end
@@ -485,7 +488,9 @@ MultiBot.ActionToTargetOrGroup = function(pAction)
 end
 
 MultiBot.ActionToGroup = function(pAction)
-	if(GetNumRaidMembers() > 5) then
+	-- See ActionToTargetOrGroup: `> 0`, not `> 5`, or stay/follow/attack/flee/formation/mode all
+	-- fail silently in a raid of 5 or fewer.
+	if(GetNumRaidMembers() > 0) then
 		SendChatMessage(pAction, "RAID")
 		return true
 	end

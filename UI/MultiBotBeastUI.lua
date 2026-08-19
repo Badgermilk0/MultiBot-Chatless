@@ -9,8 +9,6 @@ local BEAST_ACTIONS = {
 }
 
 local BEAST_FRAME_NAME = "Beast"
-local BEAST_BUTTON_X = 0
-local BEAST_FRAME_X = -2
 local BEAST_FRAME_Y = 34
 local BEAST_ROOT_ICON = "ability_mount_swiftredwindrider"
 
@@ -29,8 +27,10 @@ function MultiBot.InitializeBeastUI(tLeft)
         return nil
     end
 
-    local rootButton = tLeft.addButton("Beast", BEAST_BUTTON_X, 0, BEAST_ROOT_ICON, MultiBot.L("tips.beast.master")).doHide()
-    local beastFrame = tLeft.addFrame(BEAST_FRAME_NAME, BEAST_FRAME_X, BEAST_FRAME_Y)
+    local buttonX = MultiBot.GetLeftBarSlotX("Beast")
+    -- Hidden until Options -> Layout says otherwise (MultiBot.ApplyToolbarVisibility).
+    local rootButton = tLeft.addButton("Beast", buttonX, 0, BEAST_ROOT_ICON, MultiBot.L("tips.beast.master")).doHide()
+    local beastFrame = tLeft.addFrame(BEAST_FRAME_NAME, buttonX - 2, BEAST_FRAME_Y)
     beastFrame:Hide()
 
     rootButton.doLeft = function(owner)

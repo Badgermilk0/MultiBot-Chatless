@@ -12,8 +12,6 @@ local FLEE_BUTTONS = {
 
 local FLEE_ICON = "Interface\\AddOns\\MultiBot\\Icons\\flee.blp"
 local FLEE_FRAME_NAME = "Flee"
-local FLEE_MAIN_X = -102
-local FLEE_FRAME_X = -104
 local FLEE_FRAME_Y = 34
 local FLEE_CELL_HEIGHT = 30
 
@@ -54,8 +52,9 @@ function MultiBot.BuildFleeUI(tLeft)
         return nil
     end
 
-    local mainButton = tLeft.addButton("Flee", FLEE_MAIN_X, 0, FLEE_ICON, MultiBot.L("tips.flee.master"))
-    local fleeFrame = tLeft.addFrame(FLEE_FRAME_NAME, FLEE_FRAME_X, FLEE_FRAME_Y)
+    local buttonX = MultiBot.GetLeftBarSlotX("Flee")
+    local mainButton = tLeft.addButton("Flee", buttonX, 0, FLEE_ICON, MultiBot.L("tips.flee.master"))
+    local fleeFrame = tLeft.addFrame(FLEE_FRAME_NAME, buttonX - 2, FLEE_FRAME_Y)
     fleeFrame:Hide()
 
     mainButton.doLeft = function()
