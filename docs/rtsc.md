@@ -46,7 +46,7 @@ ground → they go. No selection command is needed for the proximity case at all
 | `reset` | **Destructive**: wipes every saved location on every bot *and* untrains the spell. |
 | `move` | Arms persistent move mode — every later cast moves the bot, until `cancel`/`reset`. |
 | `save <name>` | Arms a save; the point is captured on the next cast. |
-| `save selected <name>` | Same, but only bots that are currently selected store it. |
+| `save selected <name>` | Same, but only bots whose `RTSC selected` flag is set. **The bar no longer uses this** — see below. |
 | `save here <name>` | Stores each bot's **own current position** immediately — a formation snapshot. |
 | `unsave <name>` | Drops one saved location. |
 | `go <name>` | Moves to a saved location (exact point, no formation offset). |
@@ -77,7 +77,7 @@ through one local `sendRtsc(sub, tag)`:
 `PlayerbotAI::HandleCommand`, which the bridge's silent-whisper path goes through — so the same
 filters work over the bridge as over party chat.
 
-Two sub-commands exist only on the bridge:
+Four sub-commands exist only on the bridge:
 
 - **`persist`** — flushes the bot's context to the playerbots DB. Necessary because an armed
   `save` lands inside `SeeSpellAction` (invisible to the bridge) and context writes are memory
@@ -85,6 +85,9 @@ Two sub-commands exist only on the bridge:
 - **`here`** — seeds `see spell location` with the requester's position, then replays it via
   `rtsc last`. "Regroup on me, in formation", with no cast. It cannot be scoped with an `@tag`,
   because the native write happens before playerbots' chat filter runs.
+- **`lock` / `unlock`** — set playerbots' `RTSC selection locked` flag, which stops a plain cast
+  from rewriting the selection. See "The marquee no longer eats your selection" below. Like `here`
+  they are applied natively and therefore cannot be `@tag`-scoped.
 
 ## The `see spell location` setter bug (server-side, fixed 2026-08-19)
 
@@ -177,6 +180,67 @@ Lit selector buttons are what *you asked for*; the **number on the root button**
 server reports (`GET~RTSC`'s `selected` count), re-read shortly after every selection change.
 When the two disagree, the badge is right.
 
+### Why the bar never sends `save selected`
+
+`save selected <n>` looks like the natural fit for "store this spot for the selected bots", and the
+bar used to send it (untagged) whenever anything was selected. It leaves the scoping to the
+server's per-bot `RTSC selected` flag — **the same flag a plain marker cast overwrites** with "was
+within 10 yards of the click". So after any ordinary send, the flag was typically empty, the save
+landed on nobody, and the slot stayed grey until a bot happened to be selected again.
+
+Slot saves are therefore scoped the same way as `go`/`last`/`move`: through the chat filter
+(`@tank save 4`), which reaches exactly the bots the bar says are selected regardless of what the
+flag currently holds.
+
+### The marquee no longer eats your selection
+
+With nothing armed, a cast does two things: it moves every selected bot to the click, **and** it
+replaces every bot's flag with "was within 10 yards of it" (`SeeSpellAction.cpp`). That second part
+is upstream rubber-band selection, and it is why sending the tanks somewhere *deselected the tanks*
+(they are far from the click by definition) and *selected the bystanders* standing at the
+destination — who then got dragged along by the next cast, while the count badge and the "send
+selected" button disagreed about who was involved.
+
+**The fix is a lock, server-side** — the AI value `RTSC selection locked`
+(`mod-playerbots/src/Ai/Base/Value/RTSCValues.h`, gated in `SeeSpellAction.cpp`), set through the
+bridge's `lock` / `unlock`. While it is set, a plain cast still moves every selected bot but writes nobody's flag, so the bar's
+selection is exactly what moves, every time. The bar locks whenever its selector is non-empty and
+unlocks when it empties — with no explicit selection the rubber-band *is* the intended behaviour,
+and upstream's is what you get. The flag defaults false and is not persisted, so the bar re-sends it
+on panel open and on every root-button click (a bot summoned since the last selection change would
+otherwise still rubber-band itself in).
+
+**A client-side repair alone cannot fix this**, which is why the earlier attempt only worked
+sometimes. The cast is queued into each bot's `masterIncomingPacketHandlers` when the master's
+`CMSG_CAST_SPELL` arrives; the addon's repair can only be sent a client round-trip later, and
+`PlayerbotAI::UpdateAIInternal` drains `HandleCommands()` **before** the master packet queue. So for
+every bot that has not ticked in that window the repair is applied first and immediately overwritten
+— and since each bot ticks on its own `nextAICheckDelay`, the result was a random subset repaired.
+
+The repair is still there as the fallback for a worldserver without the lock, but rebuilt around
+that ordering:
+
+- it fires at `RTSC_CAST_SETTLE + 0.25s`, once the marquee has certainly landed, not at cast time;
+- it then **verifies**: `GET~RTSC` reports the selected flag per bot, so the bar compares the set the
+  server has against the set it recorded right after the last deliberate selection change, and
+  repeats the re-assert (at most twice) if they differ;
+- it is skipped entirely when the lock is in force, and when nothing is explicitly selected.
+
+**Needs a worldserver rebuild** (`MODULES/mod-playerbots` + `MODULES/mod-multibot-bridge`). Until
+then the fallback runs, and support is auto-detected rather than configured: an old playerbots has
+no such value, so the bridge acks `lock` with `executed = 0`; an older bridge rejects the
+sub-command in `NormalizeRTSCCommand` and acks with an *empty* command. Both switch the bar to the
+fallback, and neither is reported to the user — it is a probe, not a click.
+
+Casts that had a save or `move` armed skip the marquee branch entirely, so they need neither.
+
+### Slot feedback
+
+`UNIT_SPELLCAST_SUCCEEDED` for the marker is proof the cast happened, so an armed slot is shown as
+filled immediately instead of waiting ~1.5s for `GET~RTSC`. The optimistic fill is dropped the
+moment real state arrives, so a save that genuinely did not land goes back to empty rather than
+lying. Escaping the reticle fires no event and therefore fills nothing.
+
 ### Selecting is not sending
 
 Right-clicking roles only builds the selection; **nothing on the bar moves a bot by itself**. The
@@ -229,7 +293,7 @@ slot 3 from slot 7.
 | Root, left | **Send**: open the reticle; the ground click moves the current selection there |
 | Root, right | `enable` (train the spell) + `co/nc +rtsc,+guard` |
 | Root, **shift+right** | `reset` — wipes all saved locations, clears all nine slots |
-| Empty slot, left | Arm `save <i>` (or `save selected <i>` when a selector is pending) + reticle |
+| Empty slot, left | Arm `save <i>`, scoped to the selection (`@tank save <i>`) + reticle |
 | Empty slot, **shift+left** | `save here <i>` — formation snapshot, no cast |
 | Filled slot, left | `go <i>` |
 | Filled slot, **ctrl+left** | `show <i>` — summon a 2-second marker there |
@@ -249,7 +313,9 @@ set, so **only left-click casts**. Modified clicks set an empty `shift-type1` / 
 they do not open a reticle the action does not want.
 
 **Closing the bar sends `cancel`, never `reset`.** The old behaviour wiped every saved location
-and untrained the master's spell every time the panel was closed.
+and untrained the master's spell every time the panel was closed. `cancel` drops the selection
+server-side, so closing now clears the bar's lit tags and releases the lock with it — otherwise
+re-opening showed a selection no bot was part of any more.
 
 ## Reading the bar's state
 

@@ -255,6 +255,30 @@
     l'origine du monde**. Corrigé par un override `Set` ciblé dans
     `MODULES/mod-playerbots/src/Ai/Base/Value/RTSCValues.{h,cpp}` (additif, limité à RTSC) —
     **nécessite une recompilation du worldserver**. Voir `docs/rtsc.md`.
+  * RTSC : une case fraîchement enregistrée ne s'allumait qu'après coup. La barre envoyait un
+    `save selected <n>` **sans tag**, donc le cadrage reposait sur le flag serveur
+    `RTSC selected` — celui-là même qu'un cast au sol écrase par « à moins de 10 yards du
+    clic ». Après le moindre envoi le flag était vide, le save ne touchait aucun bot et la case
+    restait grise. Les saves passent maintenant par le filtre de chat (`@tank save 4`), comme
+    `go`/`last`/`move`, et la case s'allume dès que `UNIT_SPELLCAST_SUCCEEDED` confirme le cast
+    (l'état serveur reste l'autorité et corrige si le save n'a rien touché).
+  * RTSC : un cast simple « marquait » les bots proches du cercle de ciblage et **désélectionnait**
+    ceux qu'on venait d'envoyer (ils sont loin du clic par définition) ; au cast suivant tout ce
+    monde partait ensemble, la pastille et le bouton « envoyer » ne parlaient plus des mêmes bots.
+    C'est la sélection rubber-band d'origine (`SeeSpellAction`, branche « rien d'armé »).
+    La réapplication côté addon ne pouvait pas suffire : le cast est mis en file dans
+    `masterIncomingPacketHandlers` et `PlayerbotAI::UpdateAIInternal` vide `HandleCommands()`
+    **avant** cette file, donc une commande envoyée au moment du cast est appliquée puis aussitôt
+    écrasée — pour tout bot n'ayant pas tické pendant l'aller-retour client, d'où un sous-ensemble
+    aléatoire réparé. Corrigé par un verrou serveur `RTSC selection locked`
+    (`MODULES/mod-playerbots/src/Ai/Base/Value/RTSCValues.h` + garde dans `SeeSpellAction.cpp`,
+    additif et désactivé par défaut), posé/retiré par les sous-commandes bridge `lock` / `unlock` —
+    **recompilation du worldserver nécessaire**. En repli (serveur non recompilé, détecté via
+    `executed` de `RTSC_ACK`) la réapplication subsiste mais décalée après le rubber-band
+    (`RTSC_CAST_SETTLE + 0,25 s`) puis **vérifiée** contre les flags par bot renvoyés par
+    `GET~RTSC`, avec au plus deux reprises. Sans sélection explicite le rubber-band d'origine est
+    conservé. Fermer le panneau vide aussi la sélection affichée (le `cancel` la vidait déjà côté
+    serveur).
   * RTSC : emplacements 1..9 qui restaient allumés et `unsave` sans effet — même piège
     `WorldPosition::operator bool()` que le bug « Regroup on me » : une position par défaut
     porte `MAPID_INVALID` et passe donc pour valide. Le test de case vide de

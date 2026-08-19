@@ -62,10 +62,38 @@ local rtscUI = nil
 local castButtons = {}
 local lastReportedAt = {}
 local rtscStateRetries = 0
+-- A slot the master has just confirmably saved into, shown as filled until the authoritative
+-- GET~RTSC lands ~1.5s later. UNIT_SPELLCAST_SUCCEEDED is proof the cast happened, so this cannot
+-- light a slot for a reticle the user escaped.
+local pendingSlotFill = {}
+-- What this bar last armed ("save <n>" or "move"). Tracked here rather than read back from the
+-- server snapshot, which is up to a refresh behind at the moment the cast lands.
+local armedAction = nil
+local reassertSelection
+local scheduleSelectionRepair
+-- The server-side selection survives a plain marker cast only if the worldserver knows the `lock`
+-- sub-command (bridge + playerbots' "RTSC selection locked"). nil = not probed yet, false = an
+-- older server, in which case the delayed re-assert below is the fallback.
+local selectionLockSupported = nil
+local selectionLockActive = false
+local lockProbePending = false
+-- The bot names the bridge reported as selected right after the last *deliberate* selection
+-- change. That is the only exact yardstick the bar has: it knows its tags, not who they match.
+local expectedSelection = nil
+local captureSelection = false
+local verifySelection = false
+local selectionRepairs = 0
 
 local RTSC_STATE_RETRY_LIMIT = 5
 local RTSC_STATE_RETRY_DELAY = 0.75
 local RTSC_REPORT_INTERVAL = 8
+-- Must outlast the bots' AI tick: the cast is queued into each bot's masterIncomingPacketHandlers,
+-- and PlayerbotAI::UpdateAIInternal drains HandleCommands() *before* that queue - so a re-assert
+-- sent at cast time is applied first and then overwritten by the rubber-band branch, for every bot
+-- that has not ticked in the client round-trip. Sitting behind RTSC_CAST_SETTLE also keeps it out
+-- of the settle read's way.
+local RTSC_MARQUEE_SETTLE = RTSC_CAST_SETTLE + 0.25
+local RTSC_SELECTION_REPAIR_LIMIT = 2
 
 local function L(key, fallback)
     if MultiBot and type(MultiBot.L) == "function" then
@@ -119,6 +147,11 @@ end
 
 local function slotIsFilled(index)
     local key = tostring(index)
+
+    if pendingSlotFill[key] then
+        return true
+    end
+
     local state = bridgeRtsc()
 
     if state then
@@ -146,6 +179,74 @@ end
 local function selectedCount()
     local state = bridgeRtsc()
     return state and state.selected or 0
+end
+
+-- Who the server says is selected, by name. nil while the bridge has never answered.
+local function selectedBotSet()
+    local state = bridgeRtsc()
+    if not state then
+        return nil
+    end
+
+    local set = {}
+    for name, entry in pairs(state.bots) do
+        if entry.selected then
+            set[name] = true
+        end
+    end
+
+    return set
+end
+
+local function sameSelection(a, b)
+    -- Nothing to compare against yet: never report a disagreement we cannot substantiate.
+    if not a or not b then
+        return true
+    end
+
+    for name in pairs(a) do
+        if not b[name] then
+            return false
+        end
+    end
+
+    for name in pairs(b) do
+        if not a[name] then
+            return false
+        end
+    end
+
+    return true
+end
+
+-- Tell the server the bar owns the selection, so SeeSpellAction's rubber-band branch stops
+-- rewriting every bot's flag on a plain cast. Sent straight through Comm rather than sendRtsc:
+-- there is no chat equivalent, and the fallback path would only print "requires the bridge".
+local function applySelectionLock(active, force)
+    active = active and true or false
+
+    if not force and active == selectionLockActive then
+        return false
+    end
+
+    selectionLockActive = active
+
+    if selectionLockSupported == false then
+        return false
+    end
+
+    local comm = MultiBot.Comm
+    if not comm or type(comm.RunRtscCommand) ~= "function" then
+        return false
+    end
+
+    if not (MultiBot.bridge and MultiBot.bridge.connected) then
+        return false
+    end
+
+    lockProbePending = true
+
+    return comm.RunRtscCommand("ALL", "", active and "lock" or "unlock") and true or false
 end
 
 local function rtscNow()
@@ -380,13 +481,65 @@ end
 
 -- Called by MultiBotComm once a GET~RTSC stream completes.
 MultiBot.OnBridgeRtscState = function()
+    -- The server has spoken; drop the optimistic fills so a save that never landed goes back to
+    -- showing empty instead of lying.
+    pendingSlotFill = {}
+
+    if captureSelection then
+        -- A deliberate selection change has settled: record who it actually reached, so a later
+        -- cast can be checked against it rather than against a tag list the client cannot resolve.
+        captureSelection = false
+        verifySelection = false
+        selectionRepairs = 0
+        expectedSelection = selectedBotSet()
+    elseif verifySelection then
+        verifySelection = false
+
+        if sameSelection(expectedSelection, selectedBotSet()) then
+            selectionRepairs = 0
+        elseif selectionRepairs < RTSC_SELECTION_REPAIR_LIMIT then
+            -- The re-assert lost the race with the bots' packet queue after all. Repeat it; the
+            -- bots that already ticked make this converge instead of oscillating.
+            selectionRepairs = selectionRepairs + 1
+            if reassertSelection then
+                reassertSelection()
+            end
+        end
+    end
+
     refreshRtscUI()
 end
 
 -- Called by MultiBotComm for every RTSC_ACK. The bridge has always reported how many bots ran the
 -- command; saying nothing when that is zero is what made RTSC look broken rather than unaddressed.
 MultiBot.OnRtscCommandApplied = function(command, executed)
-    if (tonumber(executed) or 0) > 0 then
+    local ran = (tonumber(executed) or 0) > 0
+    local sub = tostring(command or "")
+
+    if sub == "lock" or sub == "unlock" then
+        -- The lock is the deterministic fix, but it only exists on a worldserver carrying both
+        -- halves of it (the bridge sub-command and playerbots' "RTSC selection locked"). With
+        -- playerbots too old the flag does not exist and `executed` is 0, so stop asking and fall
+        -- back to re-asserting. Never reported: it is a probe, not a click.
+        lockProbePending = false
+        selectionLockSupported = ran
+        return
+    end
+
+    if sub == "" then
+        -- The bridge echoes the *normalized* command, and normalizing rejects anything it does not
+        -- know - so an empty one means "this bridge never heard of what you sent". If a lock probe
+        -- is outstanding that is exactly what it rejected. Reporting "no bot ran ''" either way
+        -- would be noise: nothing was asked of any bot.
+        if lockProbePending then
+            lockProbePending = false
+            selectionLockSupported = false
+        end
+
+        return
+    end
+
+    if ran then
         return
     end
 
@@ -420,18 +573,19 @@ end
 -- re-read the real state instead of guessing.
 -- The marker spell has no spell visual, no sound and no combat-log line, so a cast that did
 -- something and a cast that did nothing looked identical. Say what it just did.
-local function reportAedmCast()
+local function reportAedmCast(armed)
     local state = bridgeRtsc()
     if not state then
         rtscMessage(L("rtsc.cast.placed", "RTSC: marker placed."))
         return
     end
 
-    local armed = nil
-    for _, entry in pairs(state.bots) do
-        if entry.armed and entry.armed ~= "" then
-            armed = entry.armed
-            break
+    if not armed then
+        for _, entry in pairs(state.bots) do
+            if entry.armed and entry.armed ~= "" then
+                armed = entry.armed
+                break
+            end
         end
     end
 
@@ -458,7 +612,29 @@ local function reportAedmCast()
 end
 
 local function onAedmCast()
-    reportAedmCast()
+    local armed = armedAction
+
+    reportAedmCast(armed)
+
+    local savedSlot = armed and string.match(armed, "^save%s+(%S+)$") or nil
+    if savedSlot then
+        -- Show it immediately. Playerbots consumes the armed save on this cast (it resets
+        -- "RTSC next spell action"), so the bar must stop advertising it as armed too.
+        pendingSlotFill[savedSlot] = true
+        armedAction = nil
+        refreshSlotButtons()
+    elseif armed ~= "move" then
+        -- A plain send. With the lock in force the server left every flag alone and there is
+        -- nothing to repair. Without it, SeeSpellAction's marquee branch has just overwritten
+        -- every bot's selected flag with "was within 10 yards of the click" - dropping the bots
+        -- that were sent and tagging the bystanders standing at the destination, who then get
+        -- dragged along by the next cast. Repair it, but only once the marquee has certainly
+        -- landed: see RTSC_MARQUEE_SETTLE.
+        if selectionLockSupported ~= true and scheduleSelectionRepair then
+            scheduleSelectionRepair()
+        end
+    end
+
     refreshRtscStateSoon(true)
 end
 
@@ -518,12 +694,22 @@ local function paintSelection(frame)
         end
     end
 
+    -- Every selection mutation funnels through here, so this is the one place the lock has to
+    -- track. An empty selector means the bar is not driving a selection, and the rubber-band
+    -- select is then exactly what a cast should do - so the lock comes off.
+    applySelectionLock(frame.selector ~= "")
+
     refreshModeButtons()
 end
 
 -- The server applies the flag a moment after the command lands; re-read so the count badge and
--- tooltip show the truth rather than what we assumed.
-local function refreshSelectionSoon()
+-- tooltip show the truth rather than what we assumed. `capture` marks the answer as the new
+-- yardstick - pass it for a deliberate selection change, not for a repair.
+local function refreshSelectionSoon(capture)
+    if capture then
+        captureSelection = true
+    end
+
     if type(MultiBot.TimerAfter) ~= "function" then
         requestRtscState()
         return
@@ -537,7 +723,9 @@ end
 local function clearSelection(frame, sendCancel)
     if sendCancel then
         sendRtsc("cancel")
-        refreshSelectionSoon()
+        -- `cancel` also resets "RTSC next spell action" server-side.
+        armedAction = nil
+        refreshSelectionSoon(true)
     end
 
     frame.selector = ""
@@ -545,13 +733,15 @@ local function clearSelection(frame, sendCancel)
 end
 
 local function replaceSelection(frame, tag)
-    -- `cancel` first: without it the new tag piles on top of whatever was already selected.
+    -- `cancel` first: without it the new tag piles on top of whatever was already selected. It
+    -- disarms any pending save/move too, which is why the bar drops its armed state here.
     sendRtsc("cancel")
     sendRtsc("select", tag)
+    armedAction = nil
 
     frame.selector = tag
     paintSelection(frame)
-    refreshSelectionSoon()
+    refreshSelectionSoon(true)
 end
 
 local function removeFromSelection(frame, tag)
@@ -564,10 +754,53 @@ local function removeFromSelection(frame, tag)
 
     -- `cancel` takes a chat filter, so a single tag can be dropped without disturbing the rest.
     sendRtsc("cancel", tag)
+    armedAction = nil
 
     frame.selector = table.concat(kept, " ")
     paintSelection(frame)
-    refreshSelectionSoon()
+    refreshSelectionSoon(true)
+end
+
+-- Re-apply the bar's selection to the server, used after a plain send-cast has clobbered it on a
+-- worldserver that does not know `lock`. Always followed by a verification read.
+reassertSelection = function()
+    local frame = rtscUI and rtscUI.selectorFrame
+    if not frame then
+        return
+    end
+
+    local tags = selectionTags(frame)
+    if #tags == 0 then
+        -- Nothing explicit selected: the marquee is the intended behaviour, leave it alone.
+        return
+    end
+
+    sendRtsc("cancel")
+    for _, tag in ipairs(tags) do
+        sendRtsc("select", tag)
+    end
+
+    verifySelection = true
+    refreshSelectionSoon(false)
+end
+
+-- Deliberately not immediate: a command sent now is applied *before* the queued cast packet on
+-- every bot that has not ticked yet, and is then overwritten by it (see RTSC_MARQUEE_SETTLE).
+scheduleSelectionRepair = function()
+    local frame = rtscUI and rtscUI.selectorFrame
+    if not frame or frame.selector == "" then
+        -- Nothing explicit selected: the marquee is the intended behaviour here.
+        return
+    end
+
+    if type(MultiBot.TimerAfter) ~= "function" then
+        reassertSelection()
+        return
+    end
+
+    MultiBot.TimerAfter(RTSC_MARQUEE_SETTLE, function()
+        reassertSelection()
+    end)
 end
 
 -- Right-click toggles: add the tag, or drop it if it is already part of the selection.
@@ -582,7 +815,7 @@ local function toggleSelection(frame, tag)
 
     frame.selector = (frame.selector == "") and tag or (frame.selector .. " " .. tag)
     paintSelection(frame)
-    refreshSelectionSoon()
+    refreshSelectionSoon(true)
 end
 
 local function createSelectorButton(selectorFrame, definition)
@@ -640,23 +873,27 @@ local function createStoragePair(selectorFrame, index)
         -- Shift stores where the bots are standing *right now* - each bot records its own spot, so
         -- a later "go" restores the formation instead of stacking everyone on one point.
         if IsShiftKeyDown() then
-            -- Stores immediately (and the bridge flushes it for us), so only the re-read is needed.
-            sendRtsc("save here " .. index)
-            if not bridgeRtsc() then
-                localSlots[tostring(index)] = true
-                refreshSlotButtons()
-            end
-
+            -- Stores immediately, no cast involved, so the slot can be shown as filled right away.
+            button.parent.doExecute(button, "save here " .. index)
+            pendingSlotFill[tostring(index)] = true
+            refreshSlotButtons()
             refreshRtscStateSoon(false)
             return
         end
 
-        -- With a selector armed, only the selected bots record the spot.
-        local selector = button.parent.selector
-        sendRtsc((selector ~= "" and "save selected " or "save ") .. index)
+        -- Scoped by tag through doExecute, exactly like go/last/move.
+        --
+        -- This used to send an untagged `save selected <n>` whenever anything was selected, which
+        -- left the scoping to the server's per-bot "RTSC selected" flag - the same flag a plain
+        -- marker cast overwrites with "was within 10 yards of the click". So after any send, the
+        -- flag was usually empty, the save landed on nobody, and the slot never lit up until a bot
+        -- happened to be selected again. A chat filter (`@tank save 4`) reaches exactly the bots
+        -- the bar says are selected, whatever the flag currently holds.
+        button.parent.doExecute(button, "save " .. index)
+        armedAction = "save " .. index
 
         -- Without the bridge there is no way to learn whether the cast ever happened, so keep the
-        -- old optimistic flip; with it, the cast watcher fills the slot from real server state.
+        -- old optimistic flip; with it, the cast watcher fills the slot once the cast is confirmed.
         if not bridgeRtsc() then
             localSlots[tostring(index)] = true
             refreshSlotButtons()
@@ -672,6 +909,7 @@ local function createStoragePair(selectorFrame, index)
     slotButton.doRight = function()
         sendRtsc("unsave " .. index)
         localSlots[tostring(index)] = nil
+        pendingSlotFill[tostring(index)] = nil
 
         if bridgeRtsc() then
             requestRtscState()
@@ -819,6 +1057,8 @@ local function createModeButtons(selectorFrame)
     -- untagged, so arming Move with only the tanks selected quietly armed the whole raid.
     moveButton.doLeft = function(button)
         button.parent.doExecute(button, "move")
+        -- Persistent until cancel/reset, and it makes casts skip the marquee branch entirely.
+        armedAction = "move"
     end
 
     moveButton.doRight = function(button)
@@ -858,12 +1098,28 @@ function MultiBot.RTSCOnPanelOpen()
     sendRtsc("enable")
     rtscStateRetries = 0
     requestRtscStateUntilConnected()
+
+    -- "RTSC selection locked" is not persisted, so a bot that relogged since the last selection
+    -- change defaults to unlocked. Re-send rather than trusting the cached value; this doubles as
+    -- the probe that tells the bar whether the server knows the sub-command at all.
+    local frame = rtscUI and rtscUI.selectorFrame
+    applySelectionLock(frame and frame.selector ~= "", true)
+
     refreshRtscUI()
 end
 
 -- Closing must NOT send `rtsc reset`: that wipes every saved location on every bot and untrains the
 -- master's spell. `cancel` only drops the selection and any armed action.
 function MultiBot.RTSCOnPanelClose()
+    -- ...and since it does drop the selection, the bar has to drop its lit tags with it. Leaving
+    -- them lit meant re-opening showed a selection no bot was part of any more, and the lock stayed
+    -- on for a selection that no longer existed.
+    local frame = rtscUI and rtscUI.selectorFrame
+    if frame then
+        clearSelection(frame, true)
+        return
+    end
+
     sendRtsc("cancel")
 end
 
@@ -882,6 +1138,8 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
         -- location on every bot and removes the master's aedm spell).
         if IsShiftKeyDown() then
             sendRtsc("reset")
+            armedAction = nil
+            pendingSlotFill = {}
             for index = 1, RTSC_SLOT_COUNT do
                 localSlots[tostring(index)] = nil
             end
@@ -902,6 +1160,12 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
     -- NOT touch the selection - clearing it here left a selection built from right-clicks with no
     -- way to act on it, which is why adding groups "sometimes didn't send them".
     rootButton.doLeft = function()
+        -- The lock is per bot and not persisted, so a bot summoned or relogged since the last
+        -- selection change would still run the rubber-band branch on this cast and pull itself
+        -- into the selection. Re-assert it now: the reticle still needs a ground click, which is
+        -- far longer than the round-trip.
+        local frame = rtscUI and rtscUI.selectorFrame
+        applySelectionLock(frame and frame.selector ~= "", true)
     end
 
     local selectorFrame = rtscFrame.addFrame(RTSC_SELECTOR_NAME, 0, RTSC_SELECTOR_Y, RTSC_SELECTOR_HEIGHT)
@@ -931,7 +1195,7 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
         sendRtsc("select")
         frame.selector = ""
         paintSelection(frame)
-        refreshSelectionSoon()
+        refreshSelectionSoon(true)
     end
 
     allButton.doLeft = function(button)

@@ -2843,6 +2843,8 @@ local RTSC_HELP_LINES = {
   "|cffffcc00Spots 1-9|r left-click when lit: send bots there. Ctrl+left: preview it. Right-click: forget it.",
   "|cffffcc00Role / group icons|r left-click: select + cast. Right-click: add to a multi-role selection.",
   "|cffffcc00Browse|r left-click: swap the role row for the group row. Right-click: clear the selection.",
+  "The selection survives casting: bystanders standing at the marker do not join it.",
+  "Closing the bar clears the selection, on the server and on the buttons.",
   "|cffffcc00Move|r: every later cast moves the selection. |cffffcc00Last|r: back to the newest mark.",
   "|cffffcc00Here|r: regroup on your exact position, in formation, with no cast (bridge only).",
   "|cffffcc00RTSC button|r shift+right-click: reset - wipes every saved spot on every bot.",
