@@ -43,9 +43,12 @@ local function toggleMasters(button)
     MultiBot.frames["MultiBar"].buttons["Masters"]:Hide()
 end
 
+-- The RTSC row is anchored below the MultiBar and simply shown/hidden. It used to shove the whole
+-- toolbar 34px up on open and back down on close, which is what made enabling/disabling RTSC feel
+-- so odd - the bar you were aiming at moved out from under the cursor, and the login restore had
+-- to replay the same offset in reverse to avoid drifting.
 local function toggleRTSC(button)
     if MultiBot.OnOffSwitch(button) then
-        MultiBot.frames["MultiBar"].setPoint(MultiBot.frames["MultiBar"].x, MultiBot.frames["MultiBar"].y + 34)
         MultiBot.frames["MultiBar"].frames["RTSC"]:Show()
         -- Trains the master's marker spell and pulls the bots' real RTSC state (see
         -- UI/MultiBotRTSCUI.lua); falls back to the old chat command if that file is missing.
@@ -57,7 +60,6 @@ local function toggleRTSC(button)
         return
     end
 
-    MultiBot.frames["MultiBar"].setPoint(MultiBot.frames["MultiBar"].x, MultiBot.frames["MultiBar"].y - 34)
     MultiBot.frames["MultiBar"].frames["RTSC"]:Hide()
     -- Deliberately NOT "rtsc reset": that wipes every saved location on every bot and untrains the
     -- master's marker spell. Closing the panel only drops the selection.

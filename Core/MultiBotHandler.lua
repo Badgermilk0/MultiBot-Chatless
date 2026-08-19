@@ -1054,12 +1054,9 @@ local function restoreMainBarSavedStates()
 	end, function()
 		MultiBot.GM = true
 	end)
+	-- No pre-offset any more: toggleRTSC shows/hides the row in place instead of moving the bar.
 	restoreEnableOnlyLeftToggle("RTSC", function()
 		return getMainBarButton("RTSC")
-	end, function()
-		if MultiBot.frames and MultiBot.frames["MultiBar"] then
-			MultiBot.frames["MultiBar"].setPoint(MultiBot.frames["MultiBar"].x, MultiBot.frames["MultiBar"].y - 34)
-		end
 	end)
 
 	if MultiBot.ApplyToolbarVisibility then

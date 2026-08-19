@@ -55,9 +55,6 @@
 
 * Units : ajouter un champ de recherche par nom dans la liste des bots (la pagination a un
   compteur de page, mais pas de filtre texte).
-* RTSC : l'ouverture du panneau décale encore toute la MultiBar de 34 px vers le haut
-  (`toggleRTSC`), et la restauration au login refait le décalage inverse. À remplacer par un
-  ancrage propre quand on touchera au layout de la MultiBar.
 * Uniformiser le template de la frame reward avec le style d'Itemus.
 * Ajouter une option pour choisir la taille des icônes de la main bar et des Quick Shaman / Quick Hunter.
 * Voir quelles autres options utiles peuvent être ajoutées à la frame options de MultiBot.
@@ -258,6 +255,28 @@
     l'origine du monde**. Corrigé par un override `Set` ciblé dans
     `MODULES/mod-playerbots/src/Ai/Base/Value/RTSCValues.{h,cpp}` (additif, limité à RTSC) —
     **nécessite une recompilation du worldserver**. Voir `docs/rtsc.md`.
+  * RTSC : emplacements 1..9 qui restaient allumés et `unsave` sans effet — même piège
+    `WorldPosition::operator bool()` que le bug « Regroup on me » : une position par défaut
+    porte `MAPID_INVALID` et passe donc pour valide. Le test de case vide de
+    `SendRtscPackets` (mod-multibot-bridge) vérifie désormais une position réellement
+    utilisable. **Recompilation serveur nécessaire.**
+  * RTSC : ouvrir/fermer le panneau ne décale plus toute la MultiBar de 34 px (`toggleRTSC`),
+    et la restauration au login n'a plus de contre-décalage à rejouer.
+  * RTSC : le bouton racine est maintenant le bouton « envoyer » — il lance le marqueur sans
+    toucher à la sélection (avant il l'effaçait, donc une sélection construite au clic droit
+    ne pouvait jamais être utilisée). Clic droit sur un rôle déjà sélectionné = le retirer.
+    Le cast du marqueur affiche enfin un retour en jeu (spot enregistré / bots envoyés / mode
+    move / sélection de proximité).
+  * RTSC sélection (Tanks / DPS / Healers / groupes) : comportement erratique corrigé.
+    Côté serveur `rtsc select` est **additif** (rien ne désélectionne) et un cast au sol
+    **remplace** la sélection de tous les bots par « à moins de 10 yards du clic »
+    (`SeeSpellAction`). L'addon empilait donc les rôles les uns sur les autres et sur les restes
+    du dernier cast. De plus la barre gardait une seconde sélection locale qui divergeait :
+    le clic gauche la vidait sans rien envoyer au serveur, `Last`/`go` s'y référaient mais
+    **`Move` l'ignorait**. Désormais : clic gauche = « seulement ceux-ci » (`cancel` puis
+    `<tag> select`), clic droit = « ajouter », la sélection survit à l'action, `Move` est
+    cadré comme `Last`, et le nombre de bots réellement sélectionnés s'affiche en pastille sur
+    le bouton RTSC.
   * RTSC : emplacements numérotés, contrôles estompés + message tant que le sort de marquage n'est
     pas appris, retour quand une commande n'atteint aucun bot (`RTSC_ACK` / `POSITION_ACK`
     exposaient déjà `executed`, l'addon le jetait), sélection en attente affichée dans l'infobulle,

@@ -141,6 +141,79 @@ Selection is reported as a **count in the root button's tooltip**. It is deliber
 onto Units roster buttons — a unit button's `state` is its online/offline flag and must not be
 repurposed.
 
+## Selection: one concept, replace by default
+
+The selection is a **server-side per-bot flag** (`RTSC selected`). Two things about it are
+invisible from the bar, and together they were why role buttons behaved randomly — sometimes
+moving the tanks, sometimes the whole raid, sometimes an arbitrary part of it:
+
+1. **`rtsc select` is purely additive.** `RtscAction` only ever sets the flag *true*; nothing
+   ever clears it for anyone else. Clicking Tanks and then DPS left **both** selected.
+2. **A plain ground cast replaces the whole selection.** `SeeSpellAction`'s marquee branch does
+   `SET_AI_VALUE(bool, "RTSC selected", inRange)` for *every* bot, where `inRange` is "within 10
+   yards of the click". So one cast silently discards a role selection and leaves a proximity
+   blob behind — which the next role click then added to.
+
+On top of that the bar kept a *second*, local selection (`selectorFrame.selector`) that could
+disagree with the server's: left-clicking a role cleared the local list but sent nothing to
+clear the server's, `Last`/`go` scoped by the local list while **`Move` ignored it entirely**,
+and the spot buttons used it only as a boolean to pick `save selected` over `save`.
+
+The bar now drives one explicit model:
+
+| Action | Meaning |
+|---|---|
+| Role/group, **left** | Select **only** this tag: sends `cancel`, then `<tag> select`, then casts |
+| Role/group, **right** | **Toggle** this tag: `<tag> select`, or `<tag> cancel` to deselect just it |
+| `@all`, left / right | Select everyone and drop role scoping (untagged `select` already reaches all) |
+| Browse, **right** | `cancel` — clear the selection on both sides |
+| Root, **left** | Cast the marker and nothing else — the "send" button for the current selection |
+
+The selection **persists across actions**: sending the same group to spot 1 and then spot 2 no
+longer needs re-selecting, and nothing clears it behind your back. `Move` is scoped like `Last`
+and the spot buttons; with nothing selected it still means everyone.
+
+Lit selector buttons are what *you asked for*; the **number on the root button** is what the
+server reports (`GET~RTSC`'s `selected` count), re-read shortly after every selection change.
+When the two disagree, the badge is right.
+
+### Selecting is not sending
+
+Right-clicking roles only builds the selection; **nothing on the bar moves a bot by itself**. The
+move happens when the master casts the marker and clicks the ground: with nothing armed,
+`SeeSpellAction` moves every bot whose flag is set to that point. So the loop is
+
+> right-click the roles you want → **left-click the root RTSC button** → click the ground.
+
+That is why the root button must not touch the selection: it is the only control that casts without
+changing who is selected. (A role's *left*-click is the one-role shortcut — select only them and
+cast, in a single click.) `Last` and the filled spot buttons replay a stored point instead, so they
+need no cast at all.
+
+One consequence worth knowing: `cancel` also clears `RTSC next spell action`, so changing the
+selection **disarms a pending `move` or `save`**. Select first, then arm — the Move button's lit
+state follows `anyBotArmed("move")`, so it visibly turns off if this happens.
+
+## Spot slots that will not clear (server-side, fixed 2026-08-19)
+
+Slots reported as occupied when nothing was ever saved in them — and `unsave` appearing to do
+nothing — is the **same `WorldPosition::operator bool()` trap** as the `here` bug. The bridge
+decided a slot was filled with:
+
+```cpp
+if (!saved || !saved->Get())   // "the same test rtsc show uses"
+    continue;
+```
+
+`operator bool()` is `mapId != 0 || x/y/z != 0`, and a default-constructed `WorldPosition`
+carries `MAPID_INVALID` (`0xFFFFFFFF`) — so it reads as a **real** location. `RTSC saved
+location` values are created on first access by name, and `RESET_AI_VALUE2` (what `unsave`
+runs) restores exactly that truthy default. Net effect: any slot the bots had ever touched
+reported as filled for ever, and clearing one was impossible.
+
+`SendRtscPackets` now tests for a *usable* position instead — a real map id and not all-zero
+coordinates. **Needs a worldserver rebuild** (`MODULES/mod-multibot-bridge`).
+
 ## The bar
 
 Left of centre: nine location slots (`MACRO<i>` when empty, `RTSC<i>` when filled, same position).
@@ -153,7 +226,7 @@ slot 3 from slot 7.
 
 | Control | Action |
 |---|---|
-| Root, left | Clear the pending selector + open the reticle |
+| Root, left | **Send**: open the reticle; the ground click moves the current selection there |
 | Root, right | `enable` (train the spell) + `co/nc +rtsc,+guard` |
 | Root, **shift+right** | `reset` — wipes all saved locations, clears all nine slots |
 | Empty slot, left | Arm `save <i>` (or `save selected <i>` when a selector is pending) + reticle |
@@ -161,11 +234,11 @@ slot 3 from slot 7.
 | Filled slot, left | `go <i>` |
 | Filled slot, **ctrl+left** | `show <i>` — summon a 2-second marker there |
 | Filled slot, right | `unsave <i>` |
-| Role/group, left | `select` + reticle |
-| Role/group, right | `select` only, and accumulate the tag into the selector |
-| `@all`, left / right | `select` for everyone (left additionally opens the reticle) |
+| Role/group, left | Select **only** this tag (`cancel` + `<tag> select`) + reticle |
+| Role/group, right | **Toggle** this tag: `<tag> select`, or `<tag> cancel` if already selected |
+| `@all`, left / right | `select` for everyone, dropping role scoping (left also opens the reticle) |
 | Browse, left / right | Swap role↔group row / `cancel` (deselect everything) |
-| Move, left / right | Arm `move` + reticle / `cancel` |
+| Move, left / right | Arm `move` for the selection + reticle / clear the selection |
 | Last, left / right | `last` / re-read state from the bridge |
 | Here, left | `here` (bridge only; hidden when the bridge is down) |
 

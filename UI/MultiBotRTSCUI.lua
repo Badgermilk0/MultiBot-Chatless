@@ -43,6 +43,16 @@ local RTSC_ROLE_BUTTONS = {
 local RTSC_BROWSE_ROLES = { "@dps", "@tank", "@melee", "@healer", "@ranged", "@meleedps", "@rangeddps" }
 local RTSC_BROWSE_GROUPS = { "@group1", "@group2", "@group3", "@group4", "@group5" }
 
+-- Every tag that can take part in a selection, so the lit state can be repainted as a whole set
+-- instead of button by button.
+local RTSC_SELECTOR_TAGS = {}
+for _, definition in ipairs(RTSC_GROUP_BUTTONS) do
+    table.insert(RTSC_SELECTOR_TAGS, definition.tag)
+end
+for _, definition in ipairs(RTSC_ROLE_BUTTONS) do
+    table.insert(RTSC_SELECTOR_TAGS, definition.tag)
+end
+
 -- Optimistic slot bookkeeping, used only while the bridge cannot tell us the real server state.
 local localSlots = {}
 local rtscUI = nil
@@ -328,9 +338,26 @@ local function refreshModeButtons()
             ) .. "|r"
         end
 
+        -- The selection is a server-side per-bot flag, so the only honest indicator is the
+        -- count the bridge reports. It rides on the root button as a badge, because the point
+        -- of this pass is that the selection must stop being invisible.
+        local badge = ""
         if bridgeRtsc() then
+            local count = selectedCount()
             tip = tip .. "\n\n" ..
-                string.format(L("rtsc.selected.count", "Bots currently selected: %d"), selectedCount())
+                string.format(L("rtsc.selected.count", "Bots currently selected: %d"), count)
+            if count > 0 then
+                badge = tostring(count)
+            end
+        end
+
+        if rootButton.amount then
+            rootButton.amount:SetText(badge)
+        else
+            rootButton.setAmount(badge)
+        end
+        if rootButton.amount and rootButton.amount.SetTextColor then
+            rootButton.amount:SetTextColor(0.4, 1, 0.4)
         end
 
         -- A half-built multi-role selection was previously invisible unless you remembered which
@@ -391,7 +418,47 @@ end
 -- The armed `save <n>` only lands when the bots process the master's cast, and context writes stay
 -- in memory until the bridge flushes them - so wait for the cast, ask the bridge to persist, then
 -- re-read the real state instead of guessing.
+-- The marker spell has no spell visual, no sound and no combat-log line, so a cast that did
+-- something and a cast that did nothing looked identical. Say what it just did.
+local function reportAedmCast()
+    local state = bridgeRtsc()
+    if not state then
+        rtscMessage(L("rtsc.cast.placed", "RTSC: marker placed."))
+        return
+    end
+
+    local armed = nil
+    for _, entry in pairs(state.bots) do
+        if entry.armed and entry.armed ~= "" then
+            armed = entry.armed
+            break
+        end
+    end
+
+    if armed then
+        local slot = string.match(armed, "^save%s+(%S+)$") or string.match(armed, "^save selected%s+(%S+)$")
+        if slot then
+            rtscMessage(string.format(L("rtsc.cast.saved", "RTSC: marker placed - stored as spot %s."), slot))
+            return
+        end
+
+        if armed == "move" then
+            rtscMessage(L("rtsc.cast.move", "RTSC: marker placed - move mode is armed, so the selection follows every cast."))
+            return
+        end
+    end
+
+    local count = selectedCount()
+    if count > 0 then
+        rtscMessage(string.format(L("rtsc.cast.sent", "RTSC: marker placed - %d selected bot(s) sent there."), count))
+        return
+    end
+
+    rtscMessage(L("rtsc.cast.marquee", "RTSC: marker placed - nothing was selected, so bots within 10 yards of it are now selected."))
+end
+
 local function onAedmCast()
+    reportAedmCast()
     refreshRtscStateSoon(true)
 end
 
@@ -415,6 +482,109 @@ castWatcher:SetScript("OnEvent", function(_, eventName, unit, spellName, _, _, s
     onAedmCast()
 end)
 
+-- SELECTION -------------------------------------------------------------------------------------
+--
+-- There is one selection, and it lives on the server as a per-bot "RTSC selected" flag. Two things
+-- about it are invisible from the bar and caused most of the "sometimes it moves the tanks,
+-- sometimes the whole raid, sometimes half of it" confusion:
+--
+--   1. `rtsc select` is purely ADDITIVE - RtscAction only ever sets the flag true, never false for
+--      anyone else. Clicking Tanks then DPS left both selected.
+--   2. A plain ground cast REPLACES every bot's flag with "was within 10 yards of the click"
+--      (SeeSpellAction's marquee branch). So one cast silently discards a role selection and
+--      leaves a proximity blob behind, which the next role click then added to.
+--
+-- The bar therefore drives it explicitly: left-click is "only these" and always clears the server
+-- selection first, right-click is "add these". The lit buttons are what was asked for; the count
+-- badge on the root button is what the server actually reports.
+local function selectionTags(frame)
+    return MultiBot.doSplit(frame and frame.selector or "", " ")
+end
+
+local function paintSelection(frame)
+    local active = {}
+    for _, tag in ipairs(selectionTags(frame)) do
+        active[tag] = true
+    end
+
+    for _, tag in ipairs(RTSC_SELECTOR_TAGS) do
+        local button = frame.buttons[tag]
+        if button then
+            if active[tag] then
+                button.setEnable()
+            else
+                button.setDisable()
+            end
+        end
+    end
+
+    refreshModeButtons()
+end
+
+-- The server applies the flag a moment after the command lands; re-read so the count badge and
+-- tooltip show the truth rather than what we assumed.
+local function refreshSelectionSoon()
+    if type(MultiBot.TimerAfter) ~= "function" then
+        requestRtscState()
+        return
+    end
+
+    MultiBot.TimerAfter(0.4, function()
+        requestRtscState()
+    end)
+end
+
+local function clearSelection(frame, sendCancel)
+    if sendCancel then
+        sendRtsc("cancel")
+        refreshSelectionSoon()
+    end
+
+    frame.selector = ""
+    paintSelection(frame)
+end
+
+local function replaceSelection(frame, tag)
+    -- `cancel` first: without it the new tag piles on top of whatever was already selected.
+    sendRtsc("cancel")
+    sendRtsc("select", tag)
+
+    frame.selector = tag
+    paintSelection(frame)
+    refreshSelectionSoon()
+end
+
+local function removeFromSelection(frame, tag)
+    local kept = {}
+    for _, existing in ipairs(selectionTags(frame)) do
+        if existing ~= tag then
+            table.insert(kept, existing)
+        end
+    end
+
+    -- `cancel` takes a chat filter, so a single tag can be dropped without disturbing the rest.
+    sendRtsc("cancel", tag)
+
+    frame.selector = table.concat(kept, " ")
+    paintSelection(frame)
+    refreshSelectionSoon()
+end
+
+-- Right-click toggles: add the tag, or drop it if it is already part of the selection.
+local function toggleSelection(frame, tag)
+    for _, existing in ipairs(selectionTags(frame)) do
+        if existing == tag then
+            return removeFromSelection(frame, tag)
+        end
+    end
+
+    sendRtsc("select", tag)
+
+    frame.selector = (frame.selector == "") and tag or (frame.selector .. " " .. tag)
+    paintSelection(frame)
+    refreshSelectionSoon()
+end
+
 local function createSelectorButton(selectorFrame, definition)
     local button = addAedmMacro(selectorFrame
         .addButton(definition.tag, definition.x, 0, definition.icon, MultiBot.L(definition.tip), "SecureActionButtonTemplate"))
@@ -427,15 +597,14 @@ local function createSelectorButton(selectorFrame, definition)
         button.setDisable()
     end
 
+    -- Right = add this role/group to the selection, or drop it if it is already in.
     button.doRight = function(owner)
-        sendRtsc("select", definition.tag)
-        owner.parent.doSelect(owner, definition.tag)
-        owner.setEnable()
+        toggleSelection(owner.parent, definition.tag)
     end
 
+    -- Left = select ONLY this role/group (and open the reticle, since the button casts).
     button.doLeft = function(owner)
-        sendRtsc("select", definition.tag)
-        owner.parent.doReset(owner.parent)
+        replaceSelection(owner.parent, definition.tag)
     end
 
     return button
@@ -547,9 +716,6 @@ local function bindSelectorLogic(selectorFrame)
 
         for _, tag in ipairs(others) do
             sendRtsc(action, tag)
-            if button.parent.buttons[tag] then
-                button.parent.buttons[tag].setDisable()
-            end
         end
 
         if #groupIndexes > 0 then
@@ -571,44 +737,14 @@ local function bindSelectorLogic(selectorFrame)
             end
 
             sendRtsc(action, "@group" .. table.concat(parts, ","))
-
-            for _, groupIndex in ipairs(groupIndexes) do
-                local key = "@group" .. tostring(groupIndex)
-                if button.parent.buttons[key] then
-                    button.parent.buttons[key].setDisable()
-                end
-            end
         end
 
-        button.parent.selector = ""
+        -- The selection deliberately survives the action: sending the same group to spot 1 and
+        -- then spot 2 should not silently need re-selecting, and a selection that clears itself
+        -- behind your back was half of what made this bar feel random.
         refreshModeButtons()
     end
 
-    selectorFrame.doSelect = function(button, selector)
-        if button.parent.selector == "" then
-            button.parent.selector = selector
-        else
-            button.parent.selector = button.parent.selector .. " " .. selector
-        end
-
-        -- Keep the root tooltip's "Pending selection" line honest.
-        refreshModeButtons()
-    end
-
-    selectorFrame.doReset = function(frame)
-        if frame.selector == "" then
-            return
-        end
-
-        local groups = MultiBot.doSplit(frame.selector, " ")
-        for _, tag in ipairs(groups) do
-            if frame.buttons[tag] then
-                frame.buttons[tag].setDisable()
-            end
-        end
-        frame.selector = ""
-        refreshModeButtons()
-    end
 end
 
 local function createBrowseButton(selectorFrame)
@@ -621,8 +757,7 @@ local function createBrowseButton(selectorFrame)
     browseButton.setDisable()
 
     browseButton.doRight = function(button)
-        sendRtsc("cancel")
-        button.parent.doReset(button.parent)
+        clearSelection(button.parent, true)
     end
 
     browseButton.doLeft = function(button)
@@ -680,13 +815,14 @@ local function createModeButtons(selectorFrame)
             "SecureActionButtonTemplate"))
         .setDisable()
 
-    moveButton.doLeft = function()
-        sendRtsc("move")
+    -- Scoped by the current selection, like Last and the spot slots. It used to always send
+    -- untagged, so arming Move with only the tanks selected quietly armed the whole raid.
+    moveButton.doLeft = function(button)
+        button.parent.doExecute(button, "move")
     end
 
     moveButton.doRight = function(button)
-        sendRtsc("cancel")
-        button.parent.doReset(button.parent)
+        clearSelection(button.parent, true)
     end
 
     local lastButton = selectorFrame
@@ -710,7 +846,7 @@ local function createModeButtons(selectorFrame)
     -- be scoped with an @tag - it always applies to the whole visible pool.
     hereButton.doLeft = function(button)
         sendRtsc("here")
-        button.parent.doReset(button.parent)
+        clearSelection(button.parent, false)
     end
 
     return moveButton, lastButton, hereButton
@@ -750,7 +886,7 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
                 localSlots[tostring(index)] = nil
             end
 
-            button.parent.frames[RTSC_SELECTOR_NAME].doReset(button.parent.frames[RTSC_SELECTOR_NAME])
+            clearSelection(button.parent.frames[RTSC_SELECTOR_NAME], false)
             requestRtscState()
             refreshRtscUI()
             return
@@ -761,9 +897,11 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
         MultiBot.ActionToGroup("nc +rtsc,+guard,?")
     end
 
-    rootButton.doLeft = function(button)
-        local frame = button.parent.frames[RTSC_SELECTOR_NAME]
-        frame.doReset(frame)
+    -- Left = just open the reticle. This is the "send" button: the click on the ground moves
+    -- every currently selected bot there (SeeSpellAction's marquee branch). It deliberately does
+    -- NOT touch the selection - clearing it here left a selection built from right-clicks with no
+    -- way to act on it, which is why adding groups "sometimes didn't send them".
+    rootButton.doLeft = function()
     end
 
     local selectorFrame = rtscFrame.addFrame(RTSC_SELECTOR_NAME, 0, RTSC_SELECTOR_Y, RTSC_SELECTOR_HEIGHT)
@@ -784,17 +922,24 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
     local allButton = addAedmMacro(selectorFrame
         .addButton("@all", 240, 0, "Interface\\AddOns\\MultiBot\\Icons\\rtsc.blp", MultiBot.L("tips.rtsc.all"), "SecureActionButtonTemplate"))
 
-    -- Left and right send the same command on purpose: only left carries the secure /cast, so
-    -- left = "select and mark a spot now", right = "select only". Deselect-all lives on Browse's
-    -- right-click (`cancel`), which every locale already documents.
-    allButton.doLeft = function(button)
+    -- Untagged `select` already reaches every bot, so there is nothing to clear first; dropping
+    -- the role scoping is what makes the bar agree that "all" is now the scope. Left and right
+    -- send the same command on purpose: only left carries the secure /cast, so left = "select
+    -- everyone and mark a spot now", right = "select everyone". Deselect-all lives on Browse's
+    -- right-click (`cancel`).
+    local function selectEveryone(frame)
         sendRtsc("select")
-        button.parent.doReset(button.parent)
+        frame.selector = ""
+        paintSelection(frame)
+        refreshSelectionSoon()
+    end
+
+    allButton.doLeft = function(button)
+        selectEveryone(button.parent)
     end
 
     allButton.doRight = function(button)
-        sendRtsc("select")
-        button.parent.doReset(button.parent)
+        selectEveryone(button.parent)
     end
 
     local browseButton = createBrowseButton(selectorFrame)
