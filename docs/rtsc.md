@@ -364,6 +364,56 @@ their tokens in `state.rtscSilent` and the ack handler stays quiet for them. Nob
 nobody is owed an answer; that is what used to print *"no bot ran 'enable'"* at anyone who opened
 the row without bots. A real click on an empty pool now says **"RTSC: no bots online."** once.
 
+## A new order interrupts the one in flight (server-side, fixed 2026-08-20)
+
+Re-clicking while bots were still walking to the previous point did nothing — they only accepted a
+new order once they arrived. That was true with Force on *and* off, which is what made it look like
+a bar bug rather than a movement one.
+
+Every RTSC move funnels through `MoveToSpell` into `MovementAction::MoveTo`, and `MoveTo` refuses
+any move whose priority is not **strictly** greater than the stamp the previous one left
+(`IsWaitingForLastMove` compares with `>`, `MovementActions.cpp`). A successful move stamps a hold
+of `min(travel_time, AiPlayerbot.MaxWaitForMove)` — up to 5 s. A second RTSC click carries the
+*same* priority as the first, so the comparison fails, the window is still open, and the move is
+dropped. Silently: no error, no whisper. The two modes then diverge:
+
+- **Force off** — nothing stores the destination, so the click is **lost outright**; nothing ever
+  retries it. And if the bot aggroed on the way, the chase stamped `MOVEMENT_COMBAT`, which a
+  normal RTSC click can never outrank — so orders were ignored for the whole fight.
+- **Force on** — `MoveToSpell` writes `RTSC forced destination` *before* calling `MoveTo`, so the
+  new point survived and `RTSCForceMoveAction` re-issued it. Only late: it waits for the hold to
+  lapse, and re-stamps a rolling 1 s hold each time its own re-issue is refused as a duplicate. Net
+  effect was 1–5 s of a bot visibly running the wrong way, not a lost order.
+
+Two additive hunks in `MoveToSpell`, both config-gated:
+
+1. A new RTSC order releases the hold first — `AI_VALUE(LastMovement&, "last movement").Set(nullptr)`,
+   the same idiom `StayActionBase::Stay` uses. It zeroes `lastdelayTime` *and* blanks
+   `lastMoveShort`, so the `IsDuplicateMove` guard cannot refuse the re-issue either. Gated by
+   **`AiPlayerbot.RTSCInterruptInFlightMove`** (default 1) — which gates hunk 2 as well, so
+   clearing that one option is a complete revert. Nothing outside RTSC calls `MoveToSpell`, so
+   ordinary follow/chase/flee movement is untouched.
+2. Unforced, the move is now issued at `MOVEMENT_FORCED` and its hold immediately cut down to
+   **`AiPlayerbot.RTSCUnforcedGrace`** (default 1500 ms). Without this, hunk 1 lets the click
+   through but a fighting bot's own chase reclaims movement on the very next tick, so it never
+   visibly turns. Only the first 1.5 s are protected; after that the AI reclaims movement as
+   before — this is a responsiveness grace, **not** a second Force mode. Set it to 0 to restore the
+   upstream `MOVEMENT_NORMAL` stamp exactly.
+
+Tradeoff of hunk 2: on a long *non-combat* unforced move the hold is now `min(travel, 1500 ms)`
+instead of `min(travel, 5000 ms)`, so a competing normal-priority action (follow-master) can
+reclaim movement sooner than it used to. A bot on `follow` already fights an RTSC move today.
+
+**No client change and no protocol change** — the bar, the bridge and `RTSCForceMoveAction` are all
+untouched. **Needs a worldserver rebuild** (`MODULES/mod-playerbots` only; no new source files, so
+no CMake re-configure). There is no client-side fix for this: `rtsc cancel` never touches
+`last movement`, and it would deselect the very bots you are redirecting.
+
+One thing this does *not* explain, and did not change: the bar's `RTSC_CAST_DEDUPE` (0.5 s,
+`UI/MultiBotRTSCUI.lua`) still skips the bar's own bookkeeping for a second click inside half a
+second. It never blocked the cast — the move always went out — but it is why a rapid re-click can
+still look like nothing registered, with no slot repaint and no state re-read.
+
 ## The bar
 
 Left of centre: nine location slots (`MACRO<i>` when empty, `RTSC<i>` when filled, same position).
