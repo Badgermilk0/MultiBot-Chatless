@@ -91,6 +91,14 @@ local scheduleSelectionRepair
 local selectionLockSupported = nil
 local selectionLockActive = false
 local lockProbePending = false
+-- Force move. An RTSC move is one spline stamped MOVEMENT_NORMAL and nothing re-issues it, so the
+-- first combat chase (MOVEMENT_COMBAT) steals the bot on the next AI tick - the "they abort as soon
+-- as something aggroes" behaviour. While the flag is set the server remembers the destination and
+-- moves at MOVEMENT_FORCED until the bot arrives. Detected, not configured: an older worldserver
+-- has no such value (`executed` 0) or rejects the sub-command outright (empty command echo).
+local forceSupported = nil
+local forceModeActive = false
+local forceProbePending = false
 -- The bot names the bridge reported as selected right after the last *deliberate* selection
 -- change. That is the only exact yardstick the bar has: it knows its tags, not who they match.
 local expectedSelection = nil
@@ -272,6 +280,37 @@ local function applySelectionLock(active, force)
     lockProbePending = true
 
     return comm.RunRtscCommand("ALL", "", active and "lock" or "unlock") and true or false
+end
+
+-- Turn the per-bot force flag on or off for the whole visible pool. Like the lock it is applied
+-- natively, before playerbots' chat filter runs, so it cannot be `@tag`-scoped - which is right:
+-- Force is a mode, and *who* moves is still decided by the tag on the move command. `unforce` also
+-- clears any destination in flight server-side, so it doubles as the abort.
+local function applyForceMode(active, force)
+    active = active and true or false
+
+    if not force and active == forceModeActive then
+        return false
+    end
+
+    forceModeActive = active
+
+    if forceSupported == false then
+        return false
+    end
+
+    local comm = MultiBot.Comm
+    if not comm or type(comm.RunRtscCommand) ~= "function" then
+        return false
+    end
+
+    if not (MultiBot.bridge and MultiBot.bridge.connected) then
+        return false
+    end
+
+    forceProbePending = true
+
+    return comm.RunRtscCommand("ALL", "", active and "force" or "unforce") and true or false
 end
 
 local function rtscNow()
@@ -463,6 +502,32 @@ local function refreshModeButtons()
         end
     end
 
+    local forceButton = rtscUI.selectorFrame.buttons["Force"]
+    if forceButton then
+        -- Lit = "moves are forced". The logical flag lives in `forcing`, never in `state`: state is
+        -- the engine's enable/desaturation flag, and writing it raw is what left Browse's look and
+        -- its meaning permanently out of step.
+        forceButton.forcing = forceModeActive
+
+        if forceModeActive then
+            forceButton.setEnable()
+        else
+            forceButton.setDisable()
+        end
+
+        -- Same treatment as an unlearned marker spell: fade what cannot work rather than hide it,
+        -- so the reason is visible in the tooltip instead of the control just vanishing.
+        if forceButton.SetAlpha then
+            forceButton:SetAlpha(forceSupported == false and 0.35 or 1)
+        end
+
+        if MultiBot.bridge and MultiBot.bridge.connected then
+            forceButton.doShow()
+        else
+            forceButton.doHide()
+        end
+    end
+
     local hereButton = rtscUI.selectorFrame.buttons["Here"]
     if hereButton then
         -- "here" seeds the click position server-side; there is no chat command that can do it.
@@ -584,6 +649,25 @@ MultiBot.OnRtscCommandApplied = function(command, executed)
         return
     end
 
+    if sub == "force" or sub == "unforce" then
+        -- Same probe as the lock: force move needs both halves (this bridge sub-command and
+        -- playerbots' "RTSC force enabled"). Without them the flag does not exist and `executed` is
+        -- 0, so the bar greys the button instead of pretending the mode is on.
+        forceProbePending = false
+        forceSupported = ran
+
+        if not ran then
+            forceModeActive = false
+            rtscMessageThrottled("force", L(
+                "rtsc.force.unsupported",
+                "RTSC: force move needs a newer worldserver (mod-playerbots + mod-multibot-bridge). Bots will still break off a move when something aggroes."
+            ))
+        end
+
+        refreshModeButtons()
+        return
+    end
+
     if sub == "" then
         -- The bridge echoes the *normalized* command, and normalizing rejects anything it does not
         -- know - so an empty one means "this bridge never heard of what you sent". If a lock probe
@@ -592,6 +676,17 @@ MultiBot.OnRtscCommandApplied = function(command, executed)
         if lockProbePending then
             lockProbePending = false
             selectionLockSupported = false
+        end
+
+        if forceProbePending then
+            forceProbePending = false
+            forceSupported = false
+            forceModeActive = false
+            rtscMessageThrottled("force", L(
+                "rtsc.force.unsupported",
+                "RTSC: force move needs a newer worldserver (mod-playerbots + mod-multibot-bridge). Bots will still break off a move when something aggroes."
+            ))
+            refreshModeButtons()
         end
 
         return
@@ -1211,7 +1306,29 @@ local function createModeButtons(selectorFrame)
         clearSelection(button.parent, false)
     end
 
-    return moveButton, lastButton, hereButton
+    -- Not a cast button: it changes how the *next* destination is carried out, it does not place
+    -- one. Every RTSC move path inherits it, because `go`, `last`, `here` and a plain cast all
+    -- funnel through SeeSpellAction::MoveToSpell.
+    local forceButton = selectorFrame
+        .addButton("Force", 420, 0, "ability_warrior_charge",
+            L("tips.rtsc.force", "Force Move\n\nWhile lit, bots carry out an RTSC move to the end - they no longer break it off when something aggroes on the way. They still fight back; only their movement is locked to the destination.\nApplies to a marker cast, Move, Last, a saved spot and Regroup On Me alike.\n\nLeft-click to toggle.\nRight-click to stop forcing and abort any move in progress.\nRequires the MultiBot bridge and a worldserver with force-move support."))
+
+    forceButton.setDisable()
+    forceButton.forcing = false
+
+    forceButton.doLeft = function()
+        applyForceMode(not forceModeActive)
+        refreshModeButtons()
+    end
+
+    forceButton.doRight = function()
+        -- Always re-send, even when the bar already thinks force is off: `unforce` clears the
+        -- destination server-side, so this is the only way to call a forced move back mid-run.
+        applyForceMode(false, true)
+        refreshModeButtons()
+    end
+
+    return moveButton, lastButton, hereButton, forceButton
 end
 
 -- Slow backstop read while the row is open. Every other refresh here is hung off a click or a
@@ -1265,6 +1382,10 @@ function MultiBot.RTSCOnPanelOpen()
     local frame = rtscUI and rtscUI.selectorFrame
     applySelectionLock(frame and frame.selector ~= "", true)
 
+    -- "RTSC force enabled" is not persisted either, and the bar reopens unlit, so push the off
+    -- state out rather than leaving bots forced from a previous session. Doubles as the probe.
+    applyForceMode(forceModeActive, true)
+
     refreshRtscUI()
     -- Self-terminates on the first tick that finds the row hidden, so closing the bar needs no
     -- teardown of its own.
@@ -1277,6 +1398,10 @@ function MultiBot.RTSCOnPanelClose()
     -- ...and since it does drop the selection, the bar has to drop its lit tags with it. Leaving
     -- them lit meant re-opening showed a selection no bot was part of any more, and the lock stayed
     -- on for a selection that no longer existed.
+    -- Force is a mode, not a selection, so `cancel` alone would leave the pool forced with the bar
+    -- gone. Drop it explicitly; this also clears any destination still in flight.
+    applyForceMode(false, true)
+
     local frame = rtscUI and rtscUI.selectorFrame
     if frame then
         clearSelection(frame, true)
@@ -1329,6 +1454,12 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
         -- far longer than the round-trip.
         local frame = rtscUI and rtscUI.selectorFrame
         applySelectionLock(frame and frame.selector ~= "", true)
+
+        -- Same reasoning for the force flag: it is per bot and not persisted, so a bot summoned
+        -- since the toggle was set would take this cast unforced.
+        if forceModeActive then
+            applyForceMode(true, true)
+        end
     end
 
     local selectorFrame = rtscFrame.addFrame(RTSC_SELECTOR_NAME, 0, RTSC_SELECTOR_Y, RTSC_SELECTOR_HEIGHT)
@@ -1373,7 +1504,7 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
     end
 
     local browseButton = createBrowseButton(selectorFrame)
-    local moveButton, lastButton, hereButton = createModeButtons(selectorFrame)
+    local moveButton, lastButton, hereButton, forceButton = createModeButtons(selectorFrame)
 
     -- Buttons are 28 wide on a 30 pitch, so the only real gap is between the last spot slot
     -- (right edge -34) and the first selector icon (left edge +2); the second hairline goes in the
@@ -1391,6 +1522,7 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
         moveButton = moveButton,
         lastButton = lastButton,
         hereButton = hereButton,
+        forceButton = forceButton,
     }
 
     refreshRtscUI()

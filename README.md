@@ -243,7 +243,7 @@ The goal is to remove automatic UI-refresh spam.
   </tr>
   <tr>
     <td>RTSC bar</td>
-    <td><strong>Improved</strong> numbered location slots, faded controls plus a hint until the marker spell is learned, and a report when a command reaches no bot</td>
+    <td><strong>Improved</strong> numbered location slots, faded controls plus a hint until the marker spell is learned, a report when a command reaches no bot, and a <strong>Force</strong> toggle that makes bots finish a move instead of breaking it off as soon as something aggroes</td>
   </tr>
   <tr>
     <td>Loot Master frame</td>

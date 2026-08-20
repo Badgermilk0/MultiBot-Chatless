@@ -2798,6 +2798,8 @@ local RTSC_HELP_LINES = {
   "Closing the bar clears the selection, on the server and on the buttons.",
   "|cffffcc00Move|r: every later cast moves the selection. |cffffcc00Last|r: back to the newest mark.",
   "|cffffcc00Here|r: regroup on your exact position, in formation, with no cast (bridge only).",
+  "|cffffcc00Force|r: bots finish the move instead of breaking it off when something aggroes.",
+  "|cffffcc00Force|r right-click: stop forcing and call back a move already in progress.",
   "|cffffcc00RTSC button|r shift+right-click: reset - wipes every saved spot on every bot.",
 }
 

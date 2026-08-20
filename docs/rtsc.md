@@ -77,7 +77,7 @@ through one local `sendRtsc(sub, tag)`:
 `PlayerbotAI::HandleCommand`, which the bridge's silent-whisper path goes through — so the same
 filters work over the bridge as over party chat.
 
-Four sub-commands exist only on the bridge:
+Six sub-commands exist only on the bridge:
 
 - **`persist`** — flushes the bot's context to the playerbots DB. Necessary because an armed
   `save` lands inside `SeeSpellAction` (invisible to the bridge) and context writes are memory
@@ -88,6 +88,11 @@ Four sub-commands exist only on the bridge:
 - **`lock` / `unlock`** — set playerbots' `RTSC selection locked` flag, which stops a plain cast
   from rewriting the selection. See "The marquee no longer eats your selection" below. Like `here`
   they are applied natively and therefore cannot be `@tag`-scoped.
+- **`force` / `unforce`** — set playerbots' `RTSC force enabled` flag, which makes a move run to
+  completion instead of being abandoned the moment something aggroes. See "Force move" below.
+  `unforce` also clears any destination in flight, so it is the abort. Native, so not `@tag`-scoped
+  — which is right: force is a *mode*, and who moves is still decided by the tag on the move
+  command.
 
 ## The `see spell location` setter bug (server-side, fixed 2026-08-19)
 
@@ -279,11 +284,59 @@ reported as filled for ever, and clearing one was impossible.
 `SendRtscPackets` now tests for a *usable* position instead — a real map id and not all-zero
 coordinates. **Needs a worldserver rebuild** (`MODULES/mod-multibot-bridge`).
 
+## Force move (server-side, added 2026-08-20)
+
+Bots abandoning a move as soon as anything comes into range is not a bug in the bar — it is what an
+RTSC move *is* upstream. `SeeSpellAction::MoveToSpell` issues **one** `MoveNear`/`MoveTo` spline,
+stamped with the default `MovementPriority::MOVEMENT_NORMAL`, and nothing ever re-issues it. Combat
+chase (`ReachCombatTo`) moves at `MOVEMENT_COMBAT`, which is *higher*, so `IsWaitingForLastMove`
+lets it through on the very next AI tick and the bot re-points at the mob. (With `stay` active the
+destination *is* written into `PositionMap["stay"]` — but `PlayerbotAI::ChangeEngineOnCombat`
+overwrites that slot with the bot's current position the instant it enters combat, so that path
+loses the order too.) The manual workaround was `co +passive` before the move and `-passive` after.
+
+The fix has two halves, both server-side, both keyed off the per-bot flag **`RTSC force enabled`**
+(`mod-playerbots/src/Ai/Base/Value/RTSCValues.h`), set through the bridge's `force` / `unforce`:
+
+1. `MoveToSpell` stores the destination in `RTSC forced destination` (already carrying the bot's
+   formation offset), stamps a deadline, and moves at **`MOVEMENT_FORCED`** — the top of the
+   priority enum, so every combat chase is refused for the length of the move window.
+2. That window is capped at `AiPlayerbot.MaxWaitForMove` (5 s), which is nowhere near a long trek,
+   so **`RTSCForceMoveAction`** (`Ai/Base/Actions/RTSCForceMoveAction.{h,cpp}`, registered by
+   `RTSCStrategy` at **relevance 100**) re-issues it every time the window lapses, until the bot
+   arrives. Relevance 100 is above `ACTION_EMERGENCY` (90) and matches what the `see spell` packet
+   handler already runs at, so the re-issue always happens *before* a combat action can claim the
+   tick — otherwise a chase would slip into the gap. (When `MoveTo` refuses the re-issue as a
+   duplicate — it treats the same point as one for a fixed 5 s, which outlasts the shorter window a
+   sub-5-s move was granted — the action re-stamps the hold at `MOVEMENT_FORCED` instead of leaving
+   the movement unguarded. The spline already running is unaffected.)
+
+While its own spline is in flight the action deliberately returns **false**, handing the tick back
+to the rest of the AI: the bot still casts, heals and swings on the way. Only *movement* is
+monopolised, and that is enforced by the `MOVEMENT_FORCED` stamp rather than by the action itself.
+
+It ends on arrival (`AiPlayerbot.RTSCForceMoveArriveDistance`, default 3 yd), on the deadline
+(`AiPlayerbot.RTSCForceMoveTimeout`, default 60 s — so an unreachable point does not leave a bot
+running at a wall for ever), on death, on a map change, on `rtsc cancel`/`reset`, or on `unforce`.
+Because every RTSC move path funnels through `MoveToSpell` (`RTSCAction` derives from
+`SeeSpellAction`), a plain cast, `move`, `go <n>`, `last` and `here` all inherit it.
+
+The flag defaults false and is not persisted, so the bar re-sends it on panel open and on every
+root-button click — a bot summoned since the toggle was set would otherwise move unforced. `force`
+also arms the `rtsc` strategy on **both** engines (`ChangeStrategy("+rtsc", …)`), since that is
+where the action lives and it is opt-in.
+
+Support is auto-detected exactly like the selection lock: an old playerbots has no such value, so
+the bridge acks with `executed = 0`; an older bridge rejects the sub-command in
+`NormalizeRTSCCommand` and acks with an *empty* command. Either way the bar greys the Force button
+and says so once. **Needs a worldserver rebuild** (`MODULES/mod-playerbots` +
+`MODULES/mod-multibot-bridge`), and a CMake re-configure for the new source files.
+
 ## The bar
 
 Left of centre: nine location slots (`MACRO<i>` when empty, `RTSC<i>` when filled, same position).
-Right of centre: group/role selector buttons, `@all`, Browse, then Move / Last / Here. Two hairline
-separators mark the three blocks (spots · selection · actions).
+Right of centre: group/role selector buttons, `@all`, Browse, then Move / Last / Here / Force. Two
+hairline separators mark the three blocks (spots · selection · actions).
 
 The selector block holds **seven role buttons** (x 30→210) or, when Browse is on, **eight group
 buttons** (x 30→240) — a raid has eight subgroups, and playerbots' `@group<n>` filter reads
@@ -292,7 +345,7 @@ no module change. `Icons/` only ships art for groups 1-5; 6-8 reuse the generic 
 their number on the face (`label` in `RTSC_GROUP_BUTTONS`), like the location slots do — drop
 `rtsc_group<n>.blp` files in and clear `label` to give them their own art. Because the group row
 now reaches 240, the always-visible tail moved one 30px slot right: `@all` 270, Browse 300,
-separator 301, Move 330, Last 360, Here 390.
+separator 301, Move 330, Last 360, Here 390, Force 420.
 
 Each slot carries its **number** on the face — grey digits when empty, gold when a spot is stored.
 Both faces use the same icon and the same position, so without the digit there is nothing to tell
@@ -315,6 +368,8 @@ slot 3 from slot 7.
 | Move, left / right | Arm `move` for the selection + reticle / clear the selection |
 | Last, left / right | `last` / re-read state from the bridge |
 | Here, left | `here` (bridge only; hidden when the bridge is down) |
+| Force, left | Toggle `force` / `unforce` — while lit, moves run to completion (bridge only) |
+| Force, right | `unforce` — stop forcing **and** abort a move already in progress |
 
 `/mb help rtsc` prints this table in game.
 
@@ -325,7 +380,8 @@ they do not open a reticle the action does not want.
 **Closing the bar sends `cancel`, never `reset`.** The old behaviour wiped every saved location
 and untrained the master's spell every time the panel was closed. `cancel` drops the selection
 server-side, so closing now clears the bar's lit tags and releases the lock with it — otherwise
-re-opening showed a selection no bot was part of any more.
+re-opening showed a selection no bot was part of any more. It sends `unforce` too: force is a mode,
+not a selection, so `cancel` alone would leave the pool forced with the bar gone.
 
 ## Reading the bar's state
 

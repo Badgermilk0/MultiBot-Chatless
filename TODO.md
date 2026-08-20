@@ -124,6 +124,7 @@
   * `reset` déplacé sur Shift+clic droit du bouton racine, avec remise à zéro des 9 emplacements ;
   * nouvelles commandes exposées : mode `move` (bascule), `last`, `save here` (instantané de formation, Shift+clic gauche), `show <n>` (Ctrl+clic gauche), `save selected <n>` quand un sélecteur est actif ;
   * `here` (bridge uniquement) : regroupement sur la position exacte du joueur, en formation, sans cast ;
+  * `force` / `unforce` (bridge uniquement) : bouton **Force** — tant qu'il est allumé, les bots vont au bout du déplacement au lieu de l'abandonner dès qu'un ennemi arrive à portée ; ils ripostent toujours en chemin, seul leur déplacement est verrouillé sur la destination. Clic droit = arrêter le forçage et rappeler un déplacement en cours ;
   * macro construite depuis `GetSpellInfo(30758)` au lieu du nom serveur `aedm` en dur, et boutons grisés tant que le sort n'est pas appris ;
   * nombre de bots sélectionnés affiché dans l'infobulle du bouton racine (l'état des boutons d'unité reste réservé au statut en ligne / hors ligne).
 * Achat vendeur bridge-first depuis les composants manquants de recette métier.
@@ -246,6 +247,18 @@
     Comme `GetNumPartyMembers()` renvoie 0 en raid, **toutes** les commandes de groupe (stay,
     follow, attack, flee, formation, mode, tanker) échouaient silencieusement dans un raid de 5 ou
     moins. Corrigé en `> 0`, comme `isMember`/`toUnit` l'avaient déjà été.
+  * RTSC « Force Move » : les bots abandonnaient tout déplacement dès qu'un ennemi arrivait à
+    portée (contournement manuel : `co +passive` avant, `-passive` après). Ce n'est pas un défaut
+    de la barre : un déplacement RTSC est **un seul spline** estampillé `MOVEMENT_NORMAL` que rien
+    ne réémet, donc la première poursuite de combat (`MOVEMENT_COMBAT`, priorité supérieure) reprend
+    la main au tick suivant. Nouveau drapeau serveur `RTSC force enabled` : `MoveToSpell` mémorise
+    la destination et se déplace en `MOVEMENT_FORCED`, et `RTSCForceMoveAction` (stratégie `rtsc`,
+    pertinence 100) la réémet jusqu'à l'arrivée. Le bot riposte quand même en chemin — seul le
+    déplacement est monopolisé. Fin sur arrivée, délai (`AiPlayerbot.RTSCForceMoveTimeout`), mort,
+    changement de carte, `cancel`/`reset` ou `unforce`. Détection automatique comme le verrou de
+    sélection : sur un worldserver sans les deux moitiés, le bouton Force est grisé.
+    `MODULES/mod-playerbots` + `MODULES/mod-multibot-bridge` — **nécessite une recompilation du
+    worldserver** (et une reconfiguration CMake, nouveaux fichiers). Voir `docs/rtsc.md`.
   * RTSC « Regroup on me » / « Last » : les bots partaient à l'opposé du joueur. Cause côté
     **mod-playerbots** (pas l'addon) : `SeeSpellLocationValue` hérite de
     `MemoryCalculatedValue::Set()`, qui **ignore son argument**, donc `see spell location`
