@@ -17,6 +17,32 @@ local function optLF(key, fallback)
   return value
 end
 
+-- `getter and getter() or fallback` collapses a saved `false` back onto a truthy fallback, so a
+-- setting the user turned off reads as on again every time the panel is (re)built -- and the Layout
+-- tab is rebuilt on every tab switch. Read saved settings through these instead: only a nil or
+-- wrong-typed value falls back to the default.
+local function readBoolSetting(getter, fallback)
+  if type(getter) ~= "function" then
+    return fallback
+  end
+  local value = getter()
+  if type(value) == "boolean" then
+    return value
+  end
+  return fallback
+end
+
+local function readNumberSetting(getter, fallback)
+  if type(getter) ~= "function" then
+    return fallback
+  end
+  local value = getter()
+  if type(value) == "number" then
+    return value
+  end
+  return fallback
+end
+
 local function secondsLabel(value)
   local suffix = MultiBot.L("options.seconds_suffix")
   return string.format("%.1f %s", value, suffix)
@@ -180,11 +206,11 @@ local function buildLegacyOptionsContent(panel)
   scrollFrame:SetScrollChild(scrollChild)
 
   local minimapConfig = MultiBot.GetMinimapConfig and MultiBot.GetMinimapConfig() or { hide = false }
-  local mainBarMoveLocked = MultiBot.GetMainBarMoveLocked and MultiBot.GetMainBarMoveLocked() or true
-  local disableAutoCollapse = MultiBot.GetDisableAutoCollapse and MultiBot.GetDisableAutoCollapse() or false
-  local mainBarAutoHideEnabled = MultiBot.GetMainBarAutoHideEnabled and MultiBot.GetMainBarAutoHideEnabled() or false
-  local mainBarAutoHideDelay = MultiBot.GetMainBarAutoHideDelay and MultiBot.GetMainBarAutoHideDelay() or 60
-  local lootMasterUIEnabled = MultiBot.GetLootMasterUIEnabled and MultiBot.GetLootMasterUIEnabled() or true
+  local mainBarMoveLocked = readBoolSetting(MultiBot.GetMainBarMoveLocked, true)
+  local disableAutoCollapse = readBoolSetting(MultiBot.GetDisableAutoCollapse, false)
+  local mainBarAutoHideEnabled = readBoolSetting(MultiBot.GetMainBarAutoHideEnabled, false)
+  local mainBarAutoHideDelay = readNumberSetting(MultiBot.GetMainBarAutoHideDelay, 60)
+  local lootMasterUIEnabled = readBoolSetting(MultiBot.GetLootMasterUIEnabled, true)
 
   local strataDropDown = CreateFrame("Frame", "MultiBotStrataDropDown", scrollChild, "UIDropDownMenuTemplate")
 
@@ -646,11 +672,11 @@ function MultiBot.BuildOptionsPanel()
 
     local function buildLayoutTab(tabGroup)
       local scroll = addTabScroll(tabGroup)
-      local mainBarMoveLocked = MultiBot.GetMainBarMoveLocked and MultiBot.GetMainBarMoveLocked() or true
-      local disableAutoCollapse = MultiBot.GetDisableAutoCollapse and MultiBot.GetDisableAutoCollapse() or false
-      local mainBarAutoHideEnabled = MultiBot.GetMainBarAutoHideEnabled and MultiBot.GetMainBarAutoHideEnabled() or false
-      local mainBarAutoHideDelay = MultiBot.GetMainBarAutoHideDelay and MultiBot.GetMainBarAutoHideDelay() or 60
-      local lootMasterUIEnabled = MultiBot.GetLootMasterUIEnabled and MultiBot.GetLootMasterUIEnabled() or true
+      local mainBarMoveLocked = readBoolSetting(MultiBot.GetMainBarMoveLocked, true)
+      local disableAutoCollapse = readBoolSetting(MultiBot.GetDisableAutoCollapse, false)
+      local mainBarAutoHideEnabled = readBoolSetting(MultiBot.GetMainBarAutoHideEnabled, false)
+      local mainBarAutoHideDelay = readNumberSetting(MultiBot.GetMainBarAutoHideDelay, 60)
+      local lootMasterUIEnabled = readBoolSetting(MultiBot.GetLootMasterUIEnabled, true)
 
       local chkMainBarMoveLocked = AceGUI:Create("CheckBox")
       chkMainBarMoveLocked:SetLabel(mainBarMoveLockLabel)
@@ -732,7 +758,7 @@ function MultiBot.BuildOptionsPanel()
       end)
 
       local function refreshAutoHideDelaySliderState(enabled)
-        local delayValue = MultiBot.GetMainBarAutoHideDelay and MultiBot.GetMainBarAutoHideDelay() or mainBarAutoHideDelay
+        local delayValue = readNumberSetting(MultiBot.GetMainBarAutoHideDelay, mainBarAutoHideDelay)
         autoHideDelaySlider:SetValue(delayValue)
         autoHideDelaySlider:SetLabel(formatSliderLabel(optL("options.layout.mainbar_autohide_delay"), mainBarAutoHideDelayLabel(delayValue)))
         if autoHideDelaySlider.SetDisabled then

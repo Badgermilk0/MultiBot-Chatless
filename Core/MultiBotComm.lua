@@ -410,10 +410,18 @@ function Comm.RunRtiCommand(scope, target, command)
   return Comm.Send("RUN", "RTI~" .. scope .. "~" .. urlEncodeField(target) .. "~" .. token .. "~" .. urlEncodeField(command))
 end
 
+-- Past this many outstanding silent tokens the whole map is dropped. Only an ack that never
+-- arrives (a disconnect mid-flight) leaks one, and the bar sends a handful per panel open, so the
+-- cheap reset is enough bookkeeping - it can only ever cost one spurious report.
+local RTSC_SILENT_TOKEN_LIMIT = 32
+
 -- RTSC actions. `command` is the full playerbots line minus the leading verb, optionally carrying
 -- a chat-filter selector ("@tank rtsc select") - the bridge validates it and forwards it through
 -- PlayerbotAI::HandleCommand, which applies the same @-filters party chat would.
-function Comm.RunRtscCommand(scope, target, command)
+-- `silent` marks the sends the bar makes on its own (mode re-asserts on panel open/close and
+-- before a cast). Their acks must not talk to the user: nobody clicked anything, and reporting
+-- "no bot ran it" for them is what filled the chat frame when no bots were online.
+function Comm.RunRtscCommand(scope, target, command, silent)
   local state = ensureBridgeState()
 
   if not state.connected then
@@ -435,7 +443,36 @@ function Comm.RunRtscCommand(scope, target, command)
   state.rtscSeq = (tonumber(state.rtscSeq) or 0) + 1
   local token = tostring(math.floor(safeNow() * 1000)) .. "-rtsc-" .. tostring(state.rtscSeq)
 
-  return Comm.Send("RUN", "RTSC~" .. scope .. "~" .. urlEncodeField(target) .. "~" .. token .. "~" .. urlEncodeField(command))
+  if silent then
+    local silentTokens = state.rtscSilent
+
+    if type(silentTokens) ~= "table" then
+      silentTokens = {}
+      state.rtscSilent = silentTokens
+    end
+
+    local count = 0
+    for _ in pairs(silentTokens) do
+      count = count + 1
+    end
+
+    if count >= RTSC_SILENT_TOKEN_LIMIT then
+      silentTokens = {}
+      state.rtscSilent = silentTokens
+    end
+
+    silentTokens[token] = true
+  end
+
+  if not Comm.Send("RUN", "RTSC~" .. scope .. "~" .. urlEncodeField(target) .. "~" .. token .. "~" .. urlEncodeField(command)) then
+    if silent and state.rtscSilent then
+      state.rtscSilent[token] = nil
+    end
+
+    return false
+  end
+
+  return true
 end
 
 -- Chatless replacement for playerbots' `rtsc show`, which answers with a whisper. An empty
@@ -3596,15 +3633,26 @@ function Comm.HandleAddonMessage(prefix, message, distribution, sender)
     -- The ack has always carried `scope~target~token~executed~command`; the addon simply threw it
     -- away, so an RTSC command that reached no bot at all was indistinguishable from one that
     -- worked. Surface it like LOOT_ACK does.
+    -- `considered` (how many bots the command was offered to) is appended by newer bridges and is
+    -- deliberately left nil for older ones: nil means "unknown", which is not the same as 0 - the
+    -- bar must not read "no bots" into a bridge that simply never said.
     local rest = select(2, splitOnce(payload or "", "~"))
     local rest2 = select(2, splitOnce(rest, "~"))
-    local rest3 = select(2, splitOnce(rest2, "~"))
-    local executedText, encodedCommand = splitOnce(rest3, "~")
+    local token, rest3 = splitOnce(rest2, "~")
+    local executedText, rest4 = splitOnce(rest3, "~")
+    local encodedCommand, consideredText = splitOnce(rest4, "~")
     local executed = tonumber(executedText) or 0
+    local considered = tonumber(consideredText)
     local command = trim(urlDecodeField(encodedCommand))
 
+    local silent = false
+    if state.rtscSilent and state.rtscSilent[token] then
+      state.rtscSilent[token] = nil
+      silent = true
+    end
+
     if MultiBot.OnRtscCommandApplied then
-      MultiBot.OnRtscCommandApplied(command, executed)
+      MultiBot.OnRtscCommandApplied(command, executed, considered, silent)
     end
 
     return true

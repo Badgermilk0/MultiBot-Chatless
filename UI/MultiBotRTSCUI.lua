@@ -95,10 +95,16 @@ local lockProbePending = false
 -- first combat chase (MOVEMENT_COMBAT) steals the bot on the next AI tick - the "they abort as soon
 -- as something aggroes" behaviour. While the flag is set the server remembers the destination and
 -- moves at MOVEMENT_FORCED until the bot arrives. Detected, not configured: an older worldserver
--- has no such value (`executed` 0) or rejects the sub-command outright (empty command echo).
+-- has no such value (0 of N bots applied it) or rejects the sub-command outright (empty command
+-- echo). "0 of 0" is *not* evidence - with no bots online nothing was asked of anyone, and reading
+-- that as "unsupported" is what left the button dead for the session after the bar was opened
+-- without bots, lighting on click while sending nothing.
 local forceSupported = nil
 local forceModeActive = false
 local forceProbePending = false
+-- Set when the last force/unforce ack came back with no bots to apply it to. The poll re-sends
+-- while it is true, so summoning bots with the bar already open still ends up forced.
+local forceNeedsBots = false
 -- The bot names the bridge reported as selected right after the last *deliberate* selection
 -- change. That is the only exact yardstick the bar has: it knows its tags, not who they match.
 local expectedSelection = nil
@@ -255,14 +261,12 @@ end
 -- Tell the server the bar owns the selection, so SeeSpellAction's rubber-band branch stops
 -- rewriting every bot's flag on a plain cast. Sent straight through Comm rather than sendRtsc:
 -- there is no chat equivalent, and the fallback path would only print "requires the bridge".
-local function applySelectionLock(active, force)
+local function applySelectionLock(active, force, silent)
     active = active and true or false
 
     if not force and active == selectionLockActive then
         return false
     end
-
-    selectionLockActive = active
 
     if selectionLockSupported == false then
         return false
@@ -277,23 +281,27 @@ local function applySelectionLock(active, force)
         return false
     end
 
-    lockProbePending = true
+    if not comm.RunRtscCommand("ALL", "", active and "lock" or "unlock", silent) then
+        return false
+    end
 
-    return comm.RunRtscCommand("ALL", "", active and "lock" or "unlock") and true or false
+    -- Only once the command is actually on the wire: recording the mode for a send that never
+    -- happened is what left the bar's idea of the server and the server permanently out of step.
+    selectionLockActive = active
+    lockProbePending = true
+    return true
 end
 
 -- Turn the per-bot force flag on or off for the whole visible pool. Like the lock it is applied
 -- natively, before playerbots' chat filter runs, so it cannot be `@tag`-scoped - which is right:
 -- Force is a mode, and *who* moves is still decided by the tag on the move command. `unforce` also
 -- clears any destination in flight server-side, so it doubles as the abort.
-local function applyForceMode(active, force)
+local function applyForceMode(active, force, silent)
     active = active and true or false
 
     if not force and active == forceModeActive then
         return false
     end
-
-    forceModeActive = active
 
     if forceSupported == false then
         return false
@@ -308,9 +316,15 @@ local function applyForceMode(active, force)
         return false
     end
 
-    forceProbePending = true
+    if not comm.RunRtscCommand("ALL", "", active and "force" or "unforce", silent) then
+        return false
+    end
 
-    return comm.RunRtscCommand("ALL", "", active and "force" or "unforce") and true or false
+    -- The flag is set only for a command that really left: lighting the button first meant a
+    -- toggle the server never heard about still looked armed, and every move went out unforced.
+    forceModeActive = active
+    forceProbePending = true
+    return true
 end
 
 local function rtscNow()
@@ -397,7 +411,8 @@ end
 -- Single transport for the whole feature: bridge first, party/raid chat only as a fallback.
 -- `tag` is an optional playerbots chat filter ("@tank", "@group1-3"); the bridge forwards it and
 -- PlayerbotAI::HandleCommand applies exactly the same filtering party chat would.
-local function sendRtsc(sub, tag)
+-- `silent` is for the sends the bar makes on its own, whose acks must not report to the user.
+local function sendRtsc(sub, tag, silent)
     local comm = MultiBot.Comm
 
     if needsMarkerCast(sub) and not aedmKnown() then
@@ -409,7 +424,7 @@ local function sendRtsc(sub, tag)
 
     if comm and type(comm.RunRtscCommand) == "function" then
         local command = tag and (tag .. " " .. sub) or sub
-        if comm.RunRtscCommand("ALL", "", command) then
+        if comm.RunRtscCommand("ALL", "", command, silent) then
             return true
         end
     end
@@ -635,25 +650,50 @@ end
 
 -- Called by MultiBotComm for every RTSC_ACK. The bridge has always reported how many bots ran the
 -- command; saying nothing when that is zero is what made RTSC look broken rather than unaddressed.
-MultiBot.OnRtscCommandApplied = function(command, executed)
+-- `considered` is how many bots it was offered to (nil on a bridge too old to say). It is what
+-- turns "nobody ran it" into a verdict: 0 of N is a worldserver that cannot do it, 0 of 0 is an
+-- empty bot pool and means nothing at all.
+MultiBot.OnRtscCommandApplied = function(command, executed, considered, silent)
     local ran = (tonumber(executed) or 0) > 0
     local sub = tostring(command or "")
+    -- nil (old bridge) keeps the pre-`considered` reading, where 0 executed was the only signal.
+    local noBots = (tonumber(considered) or -1) == 0
 
     if sub == "lock" or sub == "unlock" then
         -- The lock is the deterministic fix, but it only exists on a worldserver carrying both
         -- halves of it (the bridge sub-command and playerbots' "RTSC selection locked"). With
-        -- playerbots too old the flag does not exist and `executed` is 0, so stop asking and fall
-        -- back to re-asserting. Never reported: it is a probe, not a click.
+        -- playerbots too old the flag does not exist and no bot applies it, so stop asking and
+        -- fall back to re-asserting. Never reported: it is a probe, not a click.
         lockProbePending = false
-        selectionLockSupported = ran
+
+        if not noBots then
+            selectionLockSupported = ran
+        end
+
         return
     end
 
     if sub == "force" or sub == "unforce" then
         -- Same probe as the lock: force move needs both halves (this bridge sub-command and
-        -- playerbots' "RTSC force enabled"). Without them the flag does not exist and `executed` is
-        -- 0, so the bar greys the button instead of pretending the mode is on.
+        -- playerbots' "RTSC force enabled"). Without them the flag does not exist, no bot applies
+        -- it, and the bar greys the button instead of pretending the mode is on. With no bots to
+        -- ask, the probe is simply inconclusive - leave it unprobed and let the poll retry once
+        -- bots exist, or the feature stays dead for the session over an empty pool.
         forceProbePending = false
+        forceNeedsBots = noBots
+
+        if noBots then
+            -- The mode stays armed and the poll keeps pushing it, but a deliberate toggle that
+            -- reached nobody still has to say why - silence here is what "it does nothing" is
+            -- made of.
+            if not silent then
+                rtscMessageThrottled("none:nobots", L("rtsc.applied.nobots", "RTSC: no bots online."))
+            end
+
+            refreshModeButtons()
+            return
+        end
+
         forceSupported = ran
 
         if not ran then
@@ -680,6 +720,7 @@ MultiBot.OnRtscCommandApplied = function(command, executed)
 
         if forceProbePending then
             forceProbePending = false
+            forceNeedsBots = false
             forceSupported = false
             forceModeActive = false
             rtscMessageThrottled("force", L(
@@ -693,6 +734,18 @@ MultiBot.OnRtscCommandApplied = function(command, executed)
     end
 
     if ran then
+        return
+    end
+
+    -- Nothing was clicked, so nothing is owed an answer: the bar re-asserts its modes on open,
+    -- close and before every cast, and those acks used to report "no bot ran 'enable'" at anyone
+    -- who opened the row without bots out.
+    if silent then
+        return
+    end
+
+    if noBots then
+        rtscMessageThrottled("none:nobots", L("rtsc.applied.nobots", "RTSC: no bots online."))
         return
     end
 
@@ -1316,15 +1369,36 @@ local function createModeButtons(selectorFrame)
     forceButton.setDisable()
     forceButton.forcing = false
 
+    -- A click that changes nothing has to say so. The toggle silently doing nothing - because the
+    -- worldserver cannot force, or the bridge is down - is exactly how it came to look like force
+    -- move "was on" while every move went out unforced.
+    local function reportForceRefused()
+        if forceSupported == false then
+            rtscMessageThrottled("force", L(
+                "rtsc.force.unsupported",
+                "RTSC: force move needs a newer worldserver (mod-playerbots + mod-multibot-bridge). Bots will still break off a move when something aggroes."
+            ))
+            return
+        end
+
+        rtscMessageThrottled("force.bridge", L("rtsc.bridge.required", "This RTSC action requires the MultiBot bridge."))
+    end
+
     forceButton.doLeft = function()
-        applyForceMode(not forceModeActive)
+        if not applyForceMode(not forceModeActive) then
+            reportForceRefused()
+        end
+
         refreshModeButtons()
     end
 
     forceButton.doRight = function()
         -- Always re-send, even when the bar already thinks force is off: `unforce` clears the
         -- destination server-side, so this is the only way to call a forced move back mid-run.
-        applyForceMode(false, true)
+        if not applyForceMode(false, true) then
+            reportForceRefused()
+        end
+
         refreshModeButtons()
     end
 
@@ -1352,6 +1426,14 @@ local function pollRtscState()
         requestRtscState()
     end
 
+    -- The last force reached nobody because there were no bots. Bots summoned since would be
+    -- running unforced - the flag is per bot and set only by this command - so push it again
+    -- rather than waiting for the user to notice and re-toggle. Only while the mode is on: there
+    -- is nothing to un-force on a pool that does not exist.
+    if forceModeActive and forceNeedsBots and not forceProbePending then
+        applyForceMode(true, true, true)
+    end
+
     schedulePoll()
 end
 
@@ -1372,7 +1454,10 @@ end
 -- Opening the bar trains the master's aedm spell (playerbots' bare `rtsc`) and pulls the real
 -- server state so the slots render from it instead of from stale UI bookkeeping.
 function MultiBot.RTSCOnPanelOpen()
-    sendRtsc("enable")
+    -- Everything this function sends is bookkeeping the user did not ask for, so all of it goes
+    -- out silent: opening the row with no bots out used to answer with two errors about a broken
+    -- worldserver, when the only thing missing was bots.
+    sendRtsc("enable", nil, true)
     rtscStateRetries = 0
     requestRtscStateUntilConnected()
 
@@ -1380,11 +1465,11 @@ function MultiBot.RTSCOnPanelOpen()
     -- change defaults to unlocked. Re-send rather than trusting the cached value; this doubles as
     -- the probe that tells the bar whether the server knows the sub-command at all.
     local frame = rtscUI and rtscUI.selectorFrame
-    applySelectionLock(frame and frame.selector ~= "", true)
+    applySelectionLock(frame and frame.selector ~= "", true, true)
 
     -- "RTSC force enabled" is not persisted either, and the bar reopens unlit, so push the off
     -- state out rather than leaving bots forced from a previous session. Doubles as the probe.
-    applyForceMode(forceModeActive, true)
+    applyForceMode(forceModeActive, true, true)
 
     refreshRtscUI()
     -- Self-terminates on the first tick that finds the row hidden, so closing the bar needs no
@@ -1399,8 +1484,9 @@ function MultiBot.RTSCOnPanelClose()
     -- them lit meant re-opening showed a selection no bot was part of any more, and the lock stayed
     -- on for a selection that no longer existed.
     -- Force is a mode, not a selection, so `cancel` alone would leave the pool forced with the bar
-    -- gone. Drop it explicitly; this also clears any destination still in flight.
-    applyForceMode(false, true)
+    -- gone. Drop it explicitly; this also clears any destination still in flight. Silent for the
+    -- same reason as the open: closing a row is not a request for a report.
+    applyForceMode(false, true, true)
 
     local frame = rtscUI and rtscUI.selectorFrame
     if frame then
@@ -1453,12 +1539,13 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
         -- into the selection. Re-assert it now: the reticle still needs a ground click, which is
         -- far longer than the round-trip.
         local frame = rtscUI and rtscUI.selectorFrame
-        applySelectionLock(frame and frame.selector ~= "", true)
+        applySelectionLock(frame and frame.selector ~= "", true, true)
 
         -- Same reasoning for the force flag: it is per bot and not persisted, so a bot summoned
-        -- since the toggle was set would take this cast unforced.
+        -- since the toggle was set would take this cast unforced. Silent: the click the user made
+        -- was "open the reticle", and it reports for itself.
         if forceModeActive then
-            applyForceMode(true, true)
+            applyForceMode(true, true, true)
         end
     end
 

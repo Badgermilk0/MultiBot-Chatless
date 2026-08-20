@@ -327,10 +327,42 @@ also arms the `rtsc` strategy on **both** engines (`ChangeStrategy("+rtsc", …)
 where the action lives and it is opt-in.
 
 Support is auto-detected exactly like the selection lock: an old playerbots has no such value, so
-the bridge acks with `executed = 0`; an older bridge rejects the sub-command in
-`NormalizeRTSCCommand` and acks with an *empty* command. Either way the bar greys the Force button
-and says so once. **Needs a worldserver rebuild** (`MODULES/mod-playerbots` +
-`MODULES/mod-multibot-bridge`), and a CMake re-configure for the new source files.
+no bot applies it; an older bridge rejects the sub-command in `NormalizeRTSCCommand` and acks with
+an *empty* command. Either way the bar greys the Force button and says so once. **Needs a
+worldserver rebuild** (`MODULES/mod-playerbots` + `MODULES/mod-multibot-bridge`), and a CMake
+re-configure for the new source files.
+
+`AttackAnythingAction` (the `grind` strategy's "pick a target and go" action) used to call
+`MotionMaster()->Clear()` unconditionally — the one combat path that ignores the movement priority
+system, where `AttackAction`'s equivalent stop checks `last movement` first. It now skips the clear
+while a forced destination is stored, so a grinding bot no longer drops the escort on the way.
+
+### Detecting support needs the denominator, not just `executed`
+
+`RTSC_ACK` reports **`executed~…~considered`** — how many bots ran the command *and* how many it
+was offered to. The bar needs both, and the first version of this feature did not have the second:
+
+- **0 of N** — bots were asked, none could → the worldserver lacks the feature. Grey the button,
+  say so once.
+- **0 of 0** — there were no bots. This says *nothing* about support and must never latch.
+
+Reading "0 of 0" as "unsupported" was the bug that made force move look implemented-but-inert:
+`RTSCOnPanelOpen` re-asserts the mode (it is per-bot and not persisted), so **opening the bar with
+no bots out probed `unforce`, got 0, and disabled Force for the rest of the session** — after which
+`applyForceMode` returned early and the click only lit the button, while every move still went out
+unforced. Two guards keep that from coming back:
+
+1. `forceSupported` stays `nil` (unprobed) on a 0-of-0 ack, and `forceNeedsBots` makes the open
+   bar's 5 s poll re-send `force` until bots exist — so summoning bots with the bar already open
+   still ends up forced.
+2. `applyForceMode` / `applySelectionLock` assign their mode flag **after** the send succeeds, not
+   before, and the Force button reports when a click was refused instead of lighting silently.
+
+The sends the bar makes on its own (`enable`, the lock and force re-asserts on panel open/close and
+before a cast) are marked **silent** — `Comm.RunRtscCommand(scope, target, command, silent)` keeps
+their tokens in `state.rtscSilent` and the ack handler stays quiet for them. Nobody clicked, so
+nobody is owed an answer; that is what used to print *"no bot ran 'enable'"* at anyone who opened
+the row without bots. A real click on an empty pool now says **"RTSC: no bots online."** once.
 
 ## The bar
 

@@ -259,6 +259,20 @@
     sélection : sur un worldserver sans les deux moitiés, le bouton Force est grisé.
     `MODULES/mod-playerbots` + `MODULES/mod-multibot-bridge` — **nécessite une recompilation du
     worldserver** (et une reconfiguration CMake, nouveaux fichiers). Voir `docs/rtsc.md`.
+  * RTSC « Force Move » (correctif) : le bouton s'allumait sans que rien ne parte, et ouvrir la
+    barre **sans aucun bot** affichait deux erreurs (« worldserver trop ancien », « aucun bot n'a
+    exécuté 'enable' »). Même cause : `RTSC_ACK` ne disait que `executed`, donc « 0 bot n'a
+    appliqué » et « il n'y a aucun bot » étaient indiscernables. L'ouverture de la barre réémet le
+    mode (`unforce`), recevait 0, et **désactivait Force pour toute la session** ; ensuite
+    `applyForceMode` posait son drapeau *avant* de sortir, d'où un bouton allumé pour un ordre
+    jamais envoyé. `RTSC_ACK` porte maintenant un sixième champ `considered` (bots sollicités) :
+    0 sur 0 ne conclut plus rien et le sondage réessaie dès que des bots existent ; les drapeaux ne
+    sont posés qu'après un envoi réussi ; les envois automatiques de la barre sont marqués
+    *silencieux* (`Comm.RunRtscCommand(..., silent)`) et un clic réel sans bot dit simplement
+    « RTSC: no bots online. ». Côté playerbots, `AttackAnythingAction` ne vide plus le motion master
+    quand une destination forcée est en cours (seul chemin de combat qui ignorait la priorité de
+    déplacement). `MODULES/mod-multibot-bridge` + `MODULES/mod-playerbots` — **nécessite une
+    recompilation du worldserver**. Voir `docs/rtsc.md`.
   * RTSC « Regroup on me » / « Last » : les bots partaient à l'opposé du joueur. Cause côté
     **mod-playerbots** (pas l'addon) : `SeeSpellLocationValue` hérite de
     `MemoryCalculatedValue::Set()`, qui **ignore son argument**, donc `see spell location`
@@ -345,6 +359,21 @@
     désormais jusqu'à x=240, le bloc toujours visible glisse d'un cran à droite (`@all` 270,
     Browse 300, séparateur 301, Move 330, Last 360, Here 390). Infobulles ajoutées dans les
     8 fichiers de locale (réduits depuis au seul `enUS`, cf. « Localisation / qualité »).
+
+* Options qui « ne se sauvegardaient pas » (août 2026) — `Lock main bar movement` et
+  `Enable loot window` :
+  * Les valeurs étaient bien persistées ; c'est la **lecture** qui était fausse.
+    `MultiBot.GetX and MultiBot.GetX() or true` renvoie `true` quand le getter renvoie `false`
+    (idiome `and/or` de Lua), donc les deux cases repartaient cochées à chaque construction du
+    panneau — et l'onglet Layout AceGUI est reconstruit à **chaque** changement d'onglet, pas
+    seulement à la connexion. Remplacé par `readBoolSetting` / `readNumberSetting`
+    (`UI/MultiBotOptions.lua`), qui ne retombent sur le défaut que pour `nil` / mauvais type.
+  * `Lock main bar movement` avait en plus un vrai défaut de comportement : `applyMoveLockState()`
+    est appelé depuis `InitializeMainUI`, donc au chargement des fichiers, **avant** que
+    `Config_Ensure` n'ait branché le profil AceDB — la valeur enregistrée était illisible et le
+    verrou se figeait sur le défaut (verrouillé) pour toute la session. `OnDragStart` relit
+    maintenant la config (`UI/MultiBotMainUI.lua`), comme le fait déjà l'`OnUpdate` de
+    l'auto-masquage juste en dessous.
 
 ### Iconos / Itemus / templates
 

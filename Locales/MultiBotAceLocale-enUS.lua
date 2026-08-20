@@ -976,6 +976,7 @@ local enUSValues = {
   ["rtsc.bridge.required"] = "This RTSC action requires the MultiBot bridge.",
   ["rtsc.spell.missing"] = "You have not learned the RTSC marker spell yet - right-click the RTSC button to learn it.",
   ["rtsc.applied.none"] = "RTSC: no bot ran '%s'. Bots must be grouped with you and in range.",
+  ["rtsc.applied.nobots"] = "RTSC: no bots online.",
   ["rtsc.help.hint"] = "Type /mb help rtsc for the full control list.",
   ["rtsc.cast.marquee"] = "RTSC: marker placed - nothing was selected, so bots within 10 yards of it are now selected.",
   ["rtsc.cast.move"] = "RTSC: marker placed - move mode is armed, so the selection follows every cast.",

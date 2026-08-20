@@ -939,6 +939,11 @@ function MultiBot.InitializeMainUI(tMultiBar)
 
     mainButton:SetScript("OnDragStart", function()
         markMainBarInteraction(autoHideState)
+        -- InitializeMainUI runs while the addon files load, i.e. before Config_Ensure has wired the
+        -- AceDB profile up, so the applyMoveLockState() above can only ever latch the default. Re-read
+        -- the saved value here (same self-healing pattern the autohide OnUpdate below uses) so an
+        -- unlocked bar stays unlocked after a relog.
+        applyMoveLockState()
         local moveLocked = mainButton.__mbMoveLocked
         if moveLocked and not IsControlKeyDown() then
             if UIErrorsFrame then
