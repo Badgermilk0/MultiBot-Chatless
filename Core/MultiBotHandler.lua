@@ -170,6 +170,20 @@ end
 -- are actually grouped and re-walk the roster for a few rounds until the target is met.
 local MAX_INVITE_ROUNDS = 3
 
+-- Bots the server has told us it will never hand over ("You are not allowed to control bot
+-- X"). Retrying one just burns a throttled tick every round, so it is skipped for the rest of
+-- the session; a reload clears the list in case the server config changed.
+local inviteBlocked = {}
+
+local function inviteNotice(message)
+	if type(message) ~= "string" or message == "" then return end
+	if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+		DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99MultiBot|r " .. message)
+	elseif print then
+		print("MultiBot " .. message)
+	end
+end
+
 -- How many of the roster's bots are currently in our group/raid.
 local function countRosterMembers(tTable)
 	if type(tTable) ~= "table" then return 0 end
@@ -228,6 +242,22 @@ local function finishInvite()
 	MultiBot.auto.invite = false
 end
 
+-- Hard stop for a running invite queue, used when the server tells us it will not take any
+-- more bots. It deliberately goes through finishInvite so the cleanup above still runs: the
+-- bots a refused add brought online but never grouped are exactly what a runaway invite
+-- leaves behind, and they get logged back out.
+function MultiBot.AbortInvite(reason)
+	if not MultiBot.auto.invite then return false end
+	inviteNotice(reason)
+	finishInvite()
+	return true
+end
+
+-- Published so the UI can pre-filter a roster the same way the queue does.
+function MultiBot.IsInviteBlocked(name)
+	return type(name) == "string" and inviteBlocked[name] == true
+end
+
 function MultiBot.HandleOnUpdate(pElapsed)
 	perfCount("handler.onupdate.calls")
 	perfDuration("handler.onupdate.elapsed", tonumber(pElapsed) or 0)
@@ -270,8 +300,15 @@ function MultiBot.HandleOnUpdate(pElapsed)
 		if addedSoFar < 0 then addedSoFar = 0 end
 		local remaining = (invite.target or 0) - addedSoFar
 
+		-- Failsafe, re-checked every tick and not just at the start: the group fills up while the
+		-- queue runs, and other bots can join it from outside the queue. Without this a target
+		-- captured up front keeps firing adds into a full raid, and the server answers each one
+		-- with "You have added too many bots" while still logging the bot in.
+		local capacity = MultiBot.getInviteCapacity and MultiBot.getInviteCapacity() or remaining
+		if remaining > capacity then remaining = capacity end
+
 		if (not tTable) or #tTable == 0 or remaining <= 0 then
-			-- Target met (raid filled / asked-for count joined) or nothing to invite.
+			-- Target met (raid filled / asked-for count joined), out of room, or nothing to invite.
 			finishInvite()
 			return
 		elseif invite.index > #tTable then
@@ -287,9 +324,11 @@ function MultiBot.HandleOnUpdate(pElapsed)
 			return
 		end
 
-		-- Skip bots already grouped without burning a throttled tick each; only the actual
-		-- add command is rate-limited. This keeps retry rounds fast when most bots are in.
-		while invite.index <= #tTable and MultiBot.isMember(tTable[invite.index]) do
+		-- Skip bots already grouped, and bots the server has refused outright, without burning
+		-- a throttled tick each; only the actual add command is rate-limited. This keeps retry
+		-- rounds fast when most bots are in.
+		while invite.index <= #tTable
+			and (MultiBot.isMember(tTable[invite.index]) or inviteBlocked[tTable[invite.index]]) do
 			invite.index = invite.index + 1
 		end
 
@@ -1675,6 +1714,42 @@ function MultiBot.HandleMultiBotEvent(event, ...)
           end
         end
 
+		-- Mass-invite failsafe. mod-playerbots refuses an add past AiPlayerbot.MaxAddedBots with
+		-- this line, but `.playerbot bot add` has *already* answered "add: NAME - ok" (the command
+		-- was accepted, the login is what gets rejected) -- so the queue cannot tell from its own
+		-- replies that nothing is joining any more. This line is the only signal. Learn the real
+		-- cap so the next invite is clamped before it starts, and stop the running queue: it would
+		-- otherwise keep firing adds that each strand a bot online and ungrouped.
+		do
+			local text = (type(arg1) == "string") and arg1 or ""
+			local limit = string.match(text, "added too many bots %(more than (%d+)%)")
+
+			if limit then
+				local maxBots = tonumber(limit)
+				if maxBots and MultiBot.SetMaxAddedBots then
+					MultiBot.SetMaxAddedBots(maxBots)
+				end
+
+				-- The server repeats the line once per refused add, so only the first one that
+				-- actually stops something reaches the user.
+				MultiBot.AbortInvite(MultiBot.doReplace(MultiBot.L("info.invite.limit"), "COUNT", tostring(maxBots or "?")))
+				return
+			end
+		end
+
+		-- Same idea for a bot that can never be added (not yours / not in your guild): the invite
+		-- queue would retry it once per round for MAX_INVITE_ROUNDS. Drop it instead.
+		do
+			local text = (type(arg1) == "string") and arg1 or ""
+			local blockedName = string.match(text, "not allowed to control bot (%S+)")
+
+			if blockedName then
+				inviteBlocked[blockedName] = true
+				MultiBot.dprint("INVITE_BLOCKED", blockedName)
+				return
+			end
+		end
+
 		if(MultiBot.isInside(arg1, "Possible strategies")) then
 			local tStrategies = MultiBot.doSplit(arg1, ", ")
 			SendChatMessage("=== STRATEGIES ===", "SAY")
@@ -2807,6 +2882,10 @@ local RTSC_HELP_LINES = {
   "|cffffcc00Spots 1-9|r left-click when lit: send bots there. Ctrl+left: preview it. Right-click: forget it.",
   "|cffffcc00Role / group icons|r left-click: select + cast. Right-click: add to a multi-role selection.",
   "|cffffcc00Browse|r left-click: swap the role row for the group row. Right-click: clear the selection.",
+  "|cffffcc00Pick|r left-click: open the bot list - the only way to command specific bots by name (bridge only).",
+  "|cffffcc00Bot icons|r left-click: select only that bot. Right-click: add it, or drop it again.",
+  "|cffffcc00Saved sets 1-3|r left-click: load. Right-click: store the current picks. Shift+right: empty.",
+  "Picks and role/group tags are exclusive: choosing one clears the other.",
   "The selection survives casting: bystanders standing at the marker do not join it.",
   "Closing the bar clears the selection, on the server and on the buttons.",
   "|cffffcc00Move|r: every later cast moves the selection. |cffffcc00Last|r: back to the newest mark.",

@@ -149,6 +149,7 @@ local function ensureBridgeState()
   state.glyphSeq = state.glyphSeq or 0
   state.glyphActive = state.glyphActive or nil
   state.rtiSeq = state.rtiSeq or 0
+  state.rtiSilent = state.rtiSilent or {}
   state.combatSeq = state.combatSeq or 0
   state.positionSeq = state.positionSeq or 0
   state.lootSeq = state.lootSeq or 0
@@ -385,7 +386,15 @@ function Comm.RequestTalentSpecList(name)
   return token
 end
 
-function Comm.RunRtiCommand(scope, target, command)
+-- Past this many outstanding silent tokens the whole map is dropped. Only an ack that never
+-- arrives (a disconnect mid-flight) leaks one, and a raid-marker action sends at most one silent
+-- token per scope or per bot, so the cheap reset is enough bookkeeping.
+local RTI_SILENT_TOKEN_LIMIT = 64
+
+-- `silent` marks the `rti <icon>` half of a raid-marker action: the bar pairs it with the
+-- attack/pull command the user actually clicked, and reporting "no bot ran it" twice for one click
+-- is what made the RTSC bar spam the chat frame before it grew the same flag.
+function Comm.RunRtiCommand(scope, target, command, silent)
   local state = ensureBridgeState()
 
   if not state.connected then
@@ -407,7 +416,36 @@ function Comm.RunRtiCommand(scope, target, command)
   state.rtiSeq = (tonumber(state.rtiSeq) or 0) + 1
   local token = tostring(math.floor(safeNow() * 1000)) .. "-" .. tostring(state.rtiSeq)
 
-  return Comm.Send("RUN", "RTI~" .. scope .. "~" .. urlEncodeField(target) .. "~" .. token .. "~" .. urlEncodeField(command))
+  if silent then
+    local silentTokens = state.rtiSilent
+
+    if type(silentTokens) ~= "table" then
+      silentTokens = {}
+      state.rtiSilent = silentTokens
+    end
+
+    local count = 0
+    for _ in pairs(silentTokens) do
+      count = count + 1
+    end
+
+    if count >= RTI_SILENT_TOKEN_LIMIT then
+      silentTokens = {}
+      state.rtiSilent = silentTokens
+    end
+
+    silentTokens[token] = true
+  end
+
+  if not Comm.Send("RUN", "RTI~" .. scope .. "~" .. urlEncodeField(target) .. "~" .. token .. "~" .. urlEncodeField(command)) then
+    if silent and state.rtiSilent then
+      state.rtiSilent[token] = nil
+    end
+
+    return false
+  end
+
+  return true
 end
 
 -- Past this many outstanding silent tokens the whole map is dropped. Only an ack that never
@@ -3622,6 +3660,28 @@ function Comm.HandleAddonMessage(prefix, message, distribution, sender)
     state.connected = true
     state.lastError = nil
     debugPrint("ADDON:RX", "RTI_ACK", payload or "")
+
+    -- The ack has always carried `scope~target~token~executed~command` and the addon simply threw
+    -- it away, so a raid-marker order that reached no bot at all was indistinguishable from one
+    -- that worked. Surface it like RTSC_ACK / LOOT_ACK do. RTI_ACK has no `considered` field.
+    local scope, rest = splitOnce(payload or "", "~")
+    local encodedTarget, rest2 = splitOnce(rest, "~")
+    local token, rest3 = splitOnce(rest2, "~")
+    local executedText, encodedCommand = splitOnce(rest3, "~")
+    local executed = tonumber(executedText) or 0
+    local command = trim(urlDecodeField(encodedCommand))
+    local target = trim(urlDecodeField(encodedTarget))
+
+    local silent = false
+    if state.rtiSilent and state.rtiSilent[token] then
+      state.rtiSilent[token] = nil
+      silent = true
+    end
+
+    if MultiBot.OnRtiCommandApplied then
+      MultiBot.OnRtiCommandApplied(command, executed, silent, trim(scope), target)
+    end
+
     return true
   end
 

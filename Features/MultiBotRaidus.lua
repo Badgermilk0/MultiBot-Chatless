@@ -1142,6 +1142,11 @@ local function announceRaidusApplySelection(selectedCount, inviteList, usedLayou
 end
 
 local function startRaidusApplyInviteOrSort(inviteCount)
+    -- Same failsafe as the Units invite buttons: a layout can name more bots than the raid or
+    -- the server's bot cap will take, and every add past the cap is refused while still
+    -- logging that bot in. Queue only what fits; the rest of the layout sorts as usual.
+    inviteCount = MultiBot.clampInviteNeeds(inviteCount)
+
     if inviteCount > 0 then
         SendChatMessage(MultiBot.L("info.starting"), "SAY")
         MultiBot.timer.invite.roster = "raidus"

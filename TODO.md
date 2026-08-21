@@ -86,6 +86,108 @@
 
 ## Fonctions déjà ajoutées / migrées
 
+### Raid Marker Control (RTI) pass — août 2026
+
+Audit + fixes of `UI/MultiBotRTIUI.lua`, still **untested in game**.
+
+* **The addon now places the marker.** `rti <icon>` only tells a bot *which* raid icon to focus;
+  playerbots resolves it through the group's icon table (`RtiTargetValue`), so `attack/pull rti
+  target` did nothing unless the marker happened to have been dropped by hand through Blizzard's
+  own target menu. **Left-click** on a scope button (All / raid group 1-8) or on a bot's own marker
+  button now calls `SetRaidTarget("target", id)`; **right-click** still opens the picker. Guarded
+  with real messages for "no target", "not in a group" and "raid member without assist" (the server
+  silently drops `SetRaidTarget` from a plain raid member).
+* **Per-bot picker geometry.** It opened a 274px column *downwards* from a roster row that already
+  sits ~218px off the bottom of the screen, so its first icons rendered off-screen and over the
+  MultiBar. Both pickers are now the same 9-slot horizontal strip (`addIconStrip`), the per-bot one
+  one roster row up; the unused vertical branch is gone.
+* **All vs raid groups are exclusive.** `runSelectedScopes` prefers the groups whenever one carries
+  a marker, but the losing side kept its icon and its highlight. `applyScopeExclusivity` clears
+  both.
+* **Empty raid groups are greyed out** while the strip is open (`GetRaidRosterInfo` subgroups; a
+  party is subgroup 0, i.e. raid group 1), with `oBorder = false` so availability never paints the
+  "toggled on" border.
+* **`RTI_ACK` is read.** The ack always carried `scope~target~token~executed~command` and the addon
+  threw it away, so an order that reached no bot looked exactly like one that worked.
+  `Comm.RunRtiCommand` grew the `silent` flag (RTSC pattern) — the `rti <icon>` half of an action
+  stays quiet, the attack/pull half reports through `MultiBot.OnRtiCommandApplied`. Messages are
+  throttled to one per kind per 2s, so an eight-group fan-out no longer prints eight lines. Same
+  for the "bridge not connected" message, which is now checked **once** per action.
+* **Per-bot markers persist** (`Store.EnsureUIChildStore("rtiBotMarkers")`, the RTSC/Raidus slot
+  pattern), so a `/reload` mid-raid keeps the assignment. Stored entries are re-resolved through
+  the canonical icon table, never trusted as-is. The store is only used once `MultiBot.db.profile`
+  exists — before that `Store.EnsureProfileStore` hands back the raw `MultiBotDB` SavedVariable and
+  the markers would land outside the profile AceDB later builds there. `UpdateBotRTIActionButton`
+  joined `LIFECYCLE_ENABLE_STEPS` so the toolbar button reappears after a reload without having to
+  open the roster first.
+* **`RunStoredBotRTISelections`** sorts the names (`pairs` order is undefined and the send queue is
+  a FIFO) and skips bots that are not in the group — `rti target` can never resolve for them, and
+  each one cost two throttled sends. It says which of the two reasons ("nothing stored" vs "not in
+  your group") produced an empty run.
+* **Tooltips** follow the toolbar's one shape (Title Case name, white sentence, red click lines,
+  grey `(Executed by: ...)`) and finally name the right mouse button — every scope tooltip said
+  "Click to pick" for what is a right-click.
+* `setAmount` builds a fresh FontString per call, so the RTI helper only calls it when the value
+  actually changes.
+
+**Second pass — extensions, same status (untested in game):**
+
+* **CC markers are reachable at last.** playerbots keeps a *second* marker per bot, `rti cc`
+  (default `moon`): bots crowd control whatever wears it (Sheep / Sap / Banish / Hibernate / Fear)
+  and `TargetValue.cpp` keeps it out of their attack targets. The bridge already allowed
+  `rti cc <icon>` and `MultiBot.AssignRTICCIcon` already existed — nothing in the UI ever called
+  it. New **CC row** in the toolbar strip (`addCcButton`), same picker and same click contract as a
+  scope button. It follows the same scope selection Attack and Pull use, so the whole rule lives in
+  one `forEachSelectedScope`.
+* **Both assignments are re-asserted on every Attack/Pull** (silently). A bot that relogged is back
+  on the playerbots defaults, and re-sending is the only way the addon can know the marker it shows
+  is the one the bot holds. Costs one extra message per scope; the client send queue paces it well
+  under the bridge's token bucket.
+* **Shift+left-click clears the marker your target wears** (`SetRaidTarget("target", 0)`), on every
+  marker button. `GetRaidTargetIndex` reads back nil on some 3.3.5a builds and 0 on others, so both
+  count as "nothing to clear". One `applyMarkerClick` contract for the scope rows, the CC row and
+  the per-bot buttons.
+* **The toolbar button's tooltip lists what it would fire** — bot name plus marker, up to 12 then a
+  count, greying the bots that are not in your group (the action skips them). The engine reads
+  `button.tip` at hover time, so refreshing the string in `updateBotRTIActionButton` is enough.
+* **Clear All** joined the per-bot dropdown (now three rows). Nothing else prunes the store: a bot
+  that leaves the pool keeps its entry — and keeps the toolbar button up — forever, and there is no
+  reliable "is this still a bot" answer at load time. `botMarkerButtons` tracks the live buttons so
+  the on-screen EveryBar rows repaint instead of keeping a stale icon.
+* **`RTI_ACK` reporting names the scope**: "Raid group 3: no Bot ran attack rti target" /
+  "<Bot> did not run pull rti target". The throttle key is per command (and per group), so Attack
+  and Pull are two reports while an eight-group fan-out of one command stays one line.
+  `Comm` passes `scope`/`target` through to `MultiBot.OnRtiCommandApplied`.
+* **`AssignRTIAttackIcon` / `AssignRTICCIcon` validate their icon** against the canonical table
+  (name or 1-8 slot) instead of forwarding a typo the bridge would silently drop — which, now that
+  acks are reported, would have surfaced as "No Bot ran: rti bogus".
+* Strip rows are named constants (`RTI_ROW_CC` / `_ATTACK` / `_PULL`, `RTI_STRIP_HEIGHT`) so adding
+  a row can not leave two buttons stacked on the same 24px slot.
+
+**Still needs the server to move (not done):** `RTI_ACK` has no `considered` field, so "0 executed"
+can not tell "no bots visible" from "bots refused"; there is no `GET~RTI`, so the addon shows its
+own record rather than the bot's real marker; and scope `ALL` reaches the whole pool including
+ungrouped bots that can never resolve a marker. Per-bot CC is deliberately absent — the EveryBar
+has no horizontal room left.
+
+### RTSC: selecting bots by name (the Pick button)
+
+The RTSC bar could only address playerbots chat filters (`@tank`, `@group3`, `@all`), and
+playerbots has **no per-name filter at all** (`ChatFilter.cpp`) — so "move this one tank, and
+nobody else" was impossible short of putting each bot in its own subgroup.
+
+**Pick** (end of the row) opens a second row listing the bots RTSC can reach: left-click selects
+**only** that bot and opens the reticle, right-click adds or drops it. A picked set and the tag
+buttons are **mutually exclusive** — choosing one clears the other, and `hasSelection()` replaced
+every `selector ~= ""` test that drives the selection lock. Three numbered slots store a set in
+SavedVariables (`Store.EnsureUIChildStore("rtscSelections")`, the Raidus layout-slot pattern).
+
+Dispatch is the bridge's **BOT scope** (`RUN~RTSC~BOT~<name>`), one message per bot — hence
+**bridge-only** (like `here`/`lock`/`force`; a whisper fallback would be per-bot chat traffic) and
+capped at 10 bots (`RTSC_PICK_LIMIT`), the client send queue running at 5 msg/s. The check mark on
+a cell is what the **server** reports as selected (`GET~RTSC`), as opposed to the lit cell, which
+is what you picked. No server change. Details in `docs/rtsc.md`, "Picking individual bots".
+
 ### One click convention everywhere: right opens, left executes
 
 Buttons disagreed with each other. Flee and Attack ran their command on **left** and opened their
@@ -111,6 +213,9 @@ Not changed, on purpose:
 * **The Units root button**, whose `doLeft(button, roster, filter)` is a refresh API called from
   seven places, and the **RTSC Browse** / roster **Browse** buttons, which page a row rather than
   open a panel.
+* **RTSC Pick**, for the same reason and for symmetry with Browse beside it: it swaps a row of the
+  bar in and out, and right-click stays "clear the selection" — which is what right-click means on
+  Browse and Move in that same row.
 
 Things this had to fix along the way — each one silently breaks otherwise:
 
@@ -288,6 +393,25 @@ Things this had to fix along the way — each one silently breaks otherwise:
   * correction du rond ovale ;
   * correction du fond bleu ;
   * décalage du nom du bot et de la ligne gold/sacs vers la droite.
+* Garde-fous de l'invite de masse (« Fill Group with Bots ») : le clic gauche prenait sa cible
+  directement dans `#MultiBot.index[roster]`, donc un roster de guilde de 80+ bots lançait 80
+  `add`. Au-delà du plafond serveur (`AiPlayerbot.MaxAddedBots`, 40 par défaut) chaque `add`
+  répond « Failure: You have added too many bots » — mais la commande a déjà répondu
+  « add: NOM - ok » et le bot est quand même connecté, hors groupe. Désormais :
+  * `MultiBot.clampInviteNeeds` (dans `MultiBotEngine`) borne toute demande d'invite au plus
+    petit des deux : places libres du raid (40 en vous comptant) et plafond serveur restant.
+    Les quatre boutons de taille, le clic gauche « tout inviter » et l'Apply de Raidus passent
+    tous par là ; la file re-vérifie la capacité **à chaque tick**, pas seulement au départ.
+  * La ligne « added too many bots (more than N) » est lue dans `CHAT_MSG_SYSTEM` : N est
+    retenu et persisté (`MultiBot.GetMaxAddedBots` / `SetMaxAddedBots`, `config.limits`), et la
+    file en cours est stoppée (`MultiBot.AbortInvite`) — via `finishInvite`, donc les bots
+    connectés mais non groupés sont bien déconnectés.
+  * « You are not allowed to control bot X » met X sur liste noire pour la session : la file ne
+    le ré-essaie plus à chaque tour.
+  * Confirmation (StaticPopup) avant une invite de masse qui sera tronquée, avec le nombre réel
+    d'invitations. Le clic gauche en groupe ne renvoie plus rien en silence : il explique.
+  * Tooltip `tips.units.invite` réécrit — il promettait « add or remove every Bot », alors que
+    ce clic n'a jamais rien retiré.
 
 ### Main bar / options / profils
 

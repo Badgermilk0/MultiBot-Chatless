@@ -936,18 +936,99 @@ local function createAllBotsCommands(controlFrame)
         end
 end
 
+local function inviteNotice(message)
+    if type(message) ~= "string" or message == "" then
+        return
+    end
+
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99MultiBot|r " .. message)
+    elseif print then
+        print("MultiBot " .. message)
+    end
+end
+
+-- Single entry point for every invite start site in this file, so the clamp cannot be skipped
+-- by adding another button later. `needs` is what the caller asks for; what actually gets
+-- queued is whatever still fits in the raid and under the server's bot cap.
+local function startInvite(roster, needs)
+    -- Re-checked here and not only at the click: the confirmation popup can sit open while
+    -- something else (a sized button, Raidus) starts its own queue, and two queues sharing
+    -- MultiBot.timer.invite would fight over the same index.
+    if MultiBot.auto.invite then
+        inviteNotice(MultiBot.L("info.wait"))
+        return false
+    end
+
+    local queued = MultiBot.clampInviteNeeds(needs)
+    if queued <= 0 then
+        inviteNotice(MultiBot.L("info.invite.full"))
+        return false
+    end
+
+    MultiBot.timer.invite.roster = roster
+    MultiBot.timer.invite.needs = queued
+    MultiBot.timer.invite.index = 1
+    MultiBot.auto.invite = true
+    SendChatMessage(MultiBot.L("info.starting"), "SAY")
+    return true
+end
+
+-- Left-click means "invite the whole roster", and a guild roster can hold far more bots than a
+-- raid (or the server) will take -- 80+ guild bots was the case that made this necessary. Ask
+-- before a mass invite that is going to be trimmed, and say how much of it will actually run.
+if not StaticPopupDialogs["MULTIBOT_INVITE_ALL_CONFIRM"] then
+    StaticPopupDialogs["MULTIBOT_INVITE_ALL_CONFIRM"] = {
+        -- Filled in per show (see below): the counts change every time.
+        text = "",
+        button1 = YES,
+        button2 = NO,
+        OnAccept = function(_, data)
+            if data and data.roster then
+                startInvite(data.roster, data.needs)
+            end
+        end,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        preferredIndex = 3,
+    }
+end
+
 local function createInviteControls(controlFrame)
     local inviteButton = controlFrame.addButton("Invite", 0, 120, "Interface\\AddOns\\MultiBot\\Icons\\invite.blp", MultiBot.L("tips.units.invite")).setEnable()
 
     inviteButton.doLeft = function()
-        if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
+        if MultiBot.auto.invite then
+            inviteNotice(MultiBot.L("info.wait"))
             return
         end
-        MultiBot.timer.invite.roster = MultiBot.frames["MultiBar"].buttons[UNITS_BUTTON_NAME].roster
-        MultiBot.timer.invite.needs = #MultiBot.index[MultiBot.timer.invite.roster]
-        MultiBot.timer.invite.index = 1
-        MultiBot.auto.invite = true
-        SendChatMessage(MultiBot.L("info.starting"), "SAY")
+
+        -- Unchanged rule: "invite everything" only starts from no group at all. It used to
+        -- return in silence, which reads as a dead button.
+        if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
+            inviteNotice(MultiBot.L("info.invite.grouped"))
+            return
+        end
+
+        local roster = MultiBot.frames["MultiBar"].buttons[UNITS_BUTTON_NAME].roster
+        local available = #(MultiBot.index[roster] or {})
+        local needs, capacity = MultiBot.clampInviteNeeds(available)
+
+        if needs <= 0 then
+            inviteNotice(MultiBot.L("info.invite.full"))
+            return
+        end
+
+        if available > capacity then
+            local message = MultiBot.doReplace(MultiBot.L("info.invite.confirm"), "COUNT", tostring(needs))
+            message = MultiBot.doReplace(message, "TOTAL", tostring(available))
+            StaticPopupDialogs["MULTIBOT_INVITE_ALL_CONFIRM"].text = message
+            StaticPopup_Show("MULTIBOT_INVITE_ALL_CONFIRM", nil, nil, { roster = roster, needs = needs })
+            return
+        end
+
+        startInvite(roster, needs)
     end
 
     inviteButton.doRight = function(button)
@@ -970,12 +1051,13 @@ local function createInviteControls(controlFrame)
 
                 local raidCount = GetNumRaidMembers()
                 local partyCount = GetNumPartyMembers()
-                MultiBot.timer.invite.roster = MultiBot.frames["MultiBar"].buttons[UNITS_BUTTON_NAME].roster
-                MultiBot.timer.invite.needs = definition.needs(raidCount, partyCount)
-                MultiBot.timer.invite.index = 1
-                MultiBot.auto.invite = true
+                local roster = MultiBot.frames["MultiBar"].buttons[UNITS_BUTTON_NAME].roster
+
+                -- These already ask for a bounded count, but it is derived from the group size
+                -- alone: it ignores the server's bot cap, and goes negative when the group is
+                -- already bigger than the size asked for. startInvite clamps both.
                 button.parent:Hide()
-                SendChatMessage(MultiBot.L("info.starting"), "SAY")
+                startInvite(roster, definition.needs(raidCount, partyCount))
             end
     end
 end

@@ -36,7 +36,7 @@ globals = {
 	"SetGuildRosterShowOffline", "PLAYER","Ambiguate", "ChatFrame_AddMessageEventFilter", "ChatTypeInfo", "CLASS_ICON_TCOORDS", "GetLootSlotLink", "GetLootSlotInfo", "GetLootMethod", "GetMasterLootCandidate",
 	"LOCALIZED_CLASS_NAMES_MALE", "LOCALIZED_CLASS_NAMES_FEMALE", "date", "LootSlotIsCoin", "LootSlotIsItem", "GetNumLootItems", "GetItemQualityColor", "GiveMasterLoot", "GetLootThreshold",
 	"QuestFrameRewardPanel", "QuestFrame", "GetFactionInfoByID", "PanelTemplates_SetTab", "PanelTemplates_SetNumTabs", "ABANDON_QUEST", "GetCoinTextureString",
-	"RETRIEVING_ITEM_INFO"
+	"RETRIEVING_ITEM_INFO", "SetRaidTarget", "GetRaidTargetIndex", "IsRaidLeader", "IsRaidOfficer"
 	
 }
 

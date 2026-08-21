@@ -176,6 +176,9 @@ The bar now drives one explicit model:
 | Role/group, **right** | **Toggle** this tag: `<tag> select`, or `<tag> cancel` to deselect just it |
 | `@all`, left / right | Select everyone and drop role scoping (untagged `select` already reaches all) |
 | Browse, **right** | `cancel` — clear the selection on both sides |
+| Bot cell, **left** | Select **only** that bot: `cancel`, then one BOT-scoped `select`, then casts |
+| Bot cell, **right** | **Toggle** that bot in or out of the picked set |
+| Pick, **right** | `cancel` — same as Browse's right-click |
 | Root, **left** | Cast the marker and nothing else — the "send" button for the current selection |
 
 The selection **persists across actions**: sending the same group to spot 1 and then spot 2 no
@@ -185,6 +188,49 @@ and the spot buttons; with nothing selected it still means everyone.
 Lit selector buttons are what *you asked for*; the **number on the root button** is what the
 server reports (`GET~RTSC`'s `selected` count), re-read shortly after every selection change.
 When the two disagree, the badge is right.
+
+### Picking individual bots
+
+A tag can say "the tanks" or "group 3" and nothing finer: playerbots has **no per-name chat
+filter** (`ChatFilter.cpp` implements strategy, level, combat type, rti, class, subgroup, spec and
+aura — that is the whole list). "Move this one tank, and nobody else" therefore cannot be expressed
+as a selector at all.
+
+The **Pick** button (end of the row) opens a second row listing the bots RTSC can reach, and the
+bar keeps a *second* form of selection beside the tag string:
+
+```lua
+selectorFrame.selector    = "@tank @group3"   -- scoped by playerbots' chat filter
+selectorFrame.customNames = { "Uther", ... }  -- scoped one bot at a time over the bridge
+```
+
+Exactly one of the two describes the selection at any moment — picking a bot clears the tags and
+clicking a tag clears the picks. Mixing them would mean maintaining two scopings for every action
+and a lit row that cannot say which one is in force. `hasSelection()` is what the lock and the
+repair paths test; nothing tests `selector ~= ""` any more.
+
+Dispatch is the bridge's **BOT scope** — `RUN~RTSC~BOT~<name>~<token>~<command>`, matched by
+`BotMatchesRTIScope` (`bot->GetName() == target`) — sent once per picked bot. Consequences:
+
+- **It is bridge-only**, like `here`, `lock` and `force`. There is no chat fallback and there
+  cannot be one; whispering each bot would put back exactly the per-bot chat traffic this addon
+  exists to avoid. With the bridge down the Pick button is hidden.
+- **Every action costs one message per bot.** The client send queue paces at
+  `MultiBot.GetThrottleRate()` (5/s) and the bridge's own bucket allows 10/s, so the set is capped
+  at `RTSC_PICK_LIMIT` (10). Roles and groups still cost one message however many bots they cover
+  — which is what they are for.
+- Selecting sends one untagged `cancel` first, then one `select` per bot. `select` is additive and
+  nothing else clears it for the bots that were *not* picked, exactly as for a tag selection.
+
+The panel shows two different things at once: a **lit cell** is a bot *you* picked, and the small
+ready-check mark is a bot the **server** reports as selected (`GET~RTSC`'s per-bot flag). That is
+the same distinction the root button's count badge makes, resolved per bot.
+
+The three numbered slots on the left store a picked set in `MultiBot.db.profile.ui.rtscSelections`
+(via `Store.EnsureUIChildStore`, the Raidus layout-slot pattern) — left-click loads, right-click
+saves, shift+right-click empties. A saved set outlives the bots in it, so loading skips names that
+are no longer in the pool; the same pruning runs on every state read, so a bot that logs out drops
+out of the live selection instead of leaving the badge disagreeing with the panel.
 
 ### Why the bar never sends `save selected`
 

@@ -223,6 +223,44 @@ function MultiBot.GetRequestTimeout()
   return REQUEST_TIMEOUT_DEFAULT
 end
 
+-- Server-side bot cap (mass-invite failsafe). mod-playerbots refuses `.playerbot bot add`
+-- once the master already controls AiPlayerbot.MaxAddedBots bots and answers
+-- "Failure: You have added too many bots (more than N)" -- while still logging that bot in,
+-- so an uncapped mass invite strands every refused bot online and ungrouped. 40 is the stock
+-- server default; the real N is learned from that failure line (MultiBot.SetMaxAddedBots, in
+-- the CHAT_MSG_SYSTEM handler) and persisted, so the next invite is capped before it fires.
+local MAX_ADDED_BOTS_DEFAULT = 40
+local MAX_ADDED_BOTS_MIN = 1
+local MAX_ADDED_BOTS_MAX = 200
+
+function MultiBot.GetMaxAddedBots()
+  local config = getConfigStore(false)
+  local value = config and config.limits and config.limits.maxAddedBots
+  if type(value) == "number" and value >= MAX_ADDED_BOTS_MIN then
+    if value > MAX_ADDED_BOTS_MAX then
+      return MAX_ADDED_BOTS_MAX
+    end
+    return value
+  end
+  return MAX_ADDED_BOTS_DEFAULT
+end
+
+function MultiBot.SetMaxAddedBots(value)
+  value = tonumber(value)
+  if not value then
+    return MultiBot.GetMaxAddedBots()
+  end
+  if value < MAX_ADDED_BOTS_MIN then value = MAX_ADDED_BOTS_MIN end
+  if value > MAX_ADDED_BOTS_MAX then value = MAX_ADDED_BOTS_MAX end
+
+  local config = getConfigStore(true)
+  local limits = ensureTableField(config, "limits")
+  if limits then
+    limits.maxAddedBots = value
+  end
+  return value
+end
+
 -- Reset elapsed counters (one or all)
 function MultiBot.ApplyTimerChanges(name)
   if not (MultiBot and MultiBot.timer) then return end

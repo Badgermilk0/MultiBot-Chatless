@@ -219,7 +219,7 @@ The goal is to remove automatic UI-refresh spam.
   </tr>
   <tr>
     <td>RTI controls</td>
-    <td><strong>Bridge-first</strong> icon assignment and RTI target actions</td>
+    <td><strong>Bridge-first</strong> icon assignment and RTI target actions. The addon also <strong>places</strong> the marker: left-clicking a scope (or a bot's own marker button) puts that raid marker on your current target with <code>SetRaidTarget</code>, which is what <code>attack/pull rti target</code> then resolves against; shift+left-click clears the marker your target wears. A <strong>CC row</strong> assigns playerbots' second marker (<code>rti cc</code>), the one bots crowd control and leave out of their attack targets. Both assignments are re-sent with every Attack/Pull, so a bot that relogged onto the defaults gets them back. <code>RTI_ACK</code> is read back, so an order that reached no bot says so &mdash; naming the raid group or bot it failed for</td>
   </tr>
   <tr>
     <td>Pull Control</td>
@@ -247,7 +247,7 @@ The goal is to remove automatic UI-refresh spam.
   </tr>
   <tr>
     <td>RTI / RTSC placement</td>
-    <td><strong>Moved onto the toolbar</strong> &mdash; RTI left the Units (PlayerBot Main Menu) panel and RTSC left the AddOn Configuration Menu; both are one click away now. RTI's scope buttons are a vertical strip (All, raid groups 1-8, Attack, Pull) with the icon picker opening sideways</td>
+    <td><strong>Moved onto the toolbar</strong> &mdash; RTI left the Units (PlayerBot Main Menu) panel and RTSC left the AddOn Configuration Menu; both are one click away now. RTI's scope buttons are a vertical strip (All, raid groups 1-8, CC, Attack, Pull) with the icon picker opening sideways. Empty raid groups are greyed out while the strip is open, All and the raid groups clear each other, and the per-bot picker in the EveryBar is the same sideways strip (it used to open 274px downwards, off the bottom of the screen). Per-bot markers are saved, so a <code>/reload</code> keeps the raid's assignment; the toolbar button lists them in its tooltip (greying the bots that are not in your group, which the action skips) and its dropdown has a <strong>Clear All</strong> entry, the only thing that prunes the list</td>
   </tr>
   <tr>
     <td>Button naming</td>
@@ -264,6 +264,10 @@ The goal is to remove automatic UI-refresh spam.
   <tr>
     <td>Units / EveryBars</td>
     <td><strong>Improved</strong> login, reload and AddClass refresh behavior</td>
+  </tr>
+  <tr>
+    <td>Group filling</td>
+    <td><strong>Capped</strong> &mdash; every invite path (the four Party/Raid sizes, the left-click "invite the whole Roster" and the Raidus Apply) is clamped to what actually fits: free raid slots and the server's own bot cap (<code>AiPlayerbot.MaxAddedBots</code>), re-checked on every queue tick. A mass invite that would be trimmed asks first. The server's "You have added too many bots (more than N)" line is read back: N is remembered so the next invite is capped up front, the running queue stops, and the bots it brought online but could not group are logged out again</td>
   </tr>
   <tr>
     <td>Random bot visibility</td>

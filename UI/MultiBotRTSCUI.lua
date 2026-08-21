@@ -11,12 +11,13 @@ local RTSC_FRAME_NAME = "RTSC"
 local RTSC_SELECTOR_NAME = "Selector"
 -- Right-aligned with the MultiBar above it. The bar's rightmost button is Group Summon, whose
 -- right edge sits at MultiBar_right + 102 (the Right sub-frame is offset +34 and the button is at
--- x = 68); this row's rightmost button is Force, at selector x = 420. Anchoring the row at -318
--- therefore puts the two right edges flush (-318 + 420 = 102). The row is wider than the bar
--- (720px vs 550px), so it still runs past the left end -- but everything here is BOTTOMRIGHT
+-- x = 68); this row's rightmost button is Pick, at selector x = 450. Anchoring the row at -348
+-- therefore puts the two right edges flush (-348 + 450 = 102). The row is wider than the bar
+-- (750px vs 550px), so it still runs past the left end -- but everything here is BOTTOMRIGHT
 -- anchored and grows leftwards, so the right edge is the one that reads as "aligned". It used to
 -- sit at -2, which left it dangling 316px out to the right of the bar.
-local RTSC_FRAME_X = -318
+-- Keep this in step with the rightmost button: it was -318 while Force (420) ended the row.
+local RTSC_FRAME_X = -348
 local RTSC_FRAME_Y = -34
 local RTSC_SELECTOR_Y = 2
 local RTSC_SELECTOR_HEIGHT = 28
@@ -60,6 +61,34 @@ local RTSC_BROWSE_GROUPS = {
     "@group1", "@group2", "@group3", "@group4", "@group5", "@group6", "@group7", "@group8",
 }
 
+-- CUSTOM SELECTION (the Pick panel) --------------------------------------------------------------
+--
+-- Playerbots has no per-name chat filter at all (ChatFilter.cpp knows strategy, level, combat
+-- type, rti, class, subgroup, spec and aura - and nothing else), so "these three bots" cannot be
+-- expressed as a `@tag`. It is dispatched one bot at a time instead, through the bridge's BOT
+-- scope (`RUN~RTSC~BOT~<name>`, BotMatchesRTIScope) - which is why this half of the bar is
+-- bridge-only, like `here`, `lock` and `force`.
+local RTSC_PICK_COLUMNS = 10
+local RTSC_PICK_ROWS = 2
+local RTSC_PICK_CELLS = RTSC_PICK_COLUMNS * RTSC_PICK_ROWS
+-- One addon message per bot per action. The client send queue paces at MultiBot.GetThrottleRate()
+-- (5/s by default) and the bridge's own bucket allows 10/s, so a large hand-picked set would turn
+-- one click into seconds of dribbling commands. A few named bots is what this mode is for; whole
+-- roles and groups already have their own buttons, and they cost one message each.
+local RTSC_PICK_LIMIT = 10
+local RTSC_PICK_SLOTS = 3
+local RTSC_PICK_STORE = "rtscSelections"
+-- Layout inside the pick panel: three saved-set slots, then the bot grid, then the page arrows.
+local RTSC_PICK_SLOT_X = 20
+local RTSC_PICK_CELL_X = 110
+local RTSC_PICK_PREV_X = 420
+local RTSC_PICK_NEXT_X = 450
+local RTSC_PICK_ROW_PITCH = 30
+local RTSC_PICK_ICON = "Interface\\AddOns\\MultiBot\\Icons\\rtsc.blp"
+-- A texture, not a glyph: the bar's font is ARIALN and an HD client can be missing the code points
+-- a tick mark would need, which renders as a literal "?" on the face.
+local RTSC_PICK_MARK = "Interface\\RaidFrame\\ReadyCheck-Ready"
+
 -- Every tag that can take part in a selection, so the lit state can be repainted as a whole set
 -- instead of button by button.
 local RTSC_SELECTOR_TAGS = {}
@@ -92,6 +121,11 @@ local pendingSlotClear = {}
 local armedAction = nil
 local reassertSelection
 local scheduleSelectionRepair
+-- Assigned once the pick panel exists. Forward-declared because paintSelection - the one choke
+-- point every selection change goes through - has to repaint the panel, and the panel's own
+-- buttons call paintSelection back.
+local refreshPicker
+local pickerPage = 1
 -- The server-side selection survives a plain marker cast only if the worldserver knows the `lock`
 -- sub-command (bridge + playerbots' "RTSC selection locked"). nil = not probed yet, false = an
 -- older server, in which case the delayed re-assert below is the fallback.
@@ -263,6 +297,30 @@ local function sameSelection(a, b)
     end
 
     return true
+end
+
+-- A selection is described by exactly ONE of two fields on the selector frame, never both:
+--   .selector    - the tag string ("@tank @group3"), scoped server-side by playerbots' chat filter
+--   .customNames - hand-picked bot names, scoped by one BOT-scoped bridge message per bot
+-- Mixing them would mean maintaining two scopings for every action and a lit state that cannot say
+-- which one is in force, so each one clears the other.
+local function customCount(frame)
+    return (frame and frame.customNames) and #frame.customNames or 0
+end
+
+local function hasSelection(frame)
+    return frame ~= nil and (frame.selector ~= "" or customCount(frame) > 0)
+end
+
+-- Local-only: drops the bar's idea of the picked set without telling the server. Every caller
+-- either sends an untagged `cancel` itself or is about to replace the selection wholesale.
+local function forgetCustomSelection(frame)
+    if not frame then
+        return
+    end
+
+    frame.customNames = {}
+    frame.customSet = {}
 end
 
 -- Tell the server the bar owns the selection, so SeeSpellAction's rubber-band branch stops
@@ -445,6 +503,87 @@ local function sendRtsc(sub, tag, silent)
     return MultiBot.ActionToGroup(tag and (tag .. " " .. chatCommand) or chatCommand)
 end
 
+-- Per-bot dispatch, for a hand-picked selection. Unlike sendRtsc this has no chat fallback and
+-- cannot have one: playerbots has no per-name filter, and whispering each bot would put back
+-- exactly the per-bot chat traffic this addon exists to avoid. With the bridge down the pick
+-- panel is hidden instead, the way `here` and `force` are.
+local function sendRtscToBot(name, sub, silent)
+    local comm = MultiBot.Comm
+    if not comm or type(comm.RunRtscCommand) ~= "function" then
+        return false
+    end
+
+    return comm.RunRtscCommand("BOT", name, sub, silent)
+end
+
+local function pickAvailable()
+    return (MultiBot.bridge and MultiBot.bridge.connected) and true or false
+end
+
+-- Who can be picked. GET~RTSC answers for exactly the bots the bridge considers commandable
+-- (GetBridgeVisibleBots), which is the right pool: RTSCAction requires GetMaster(), so an
+-- ungrouped bot ignores RTSC entirely. Until the first stream lands, fall back to the roster's
+-- "grouped with you" list rather than showing an empty panel on the first open.
+local function pickPool()
+    local names = {}
+    local state = bridgeRtsc()
+
+    if state then
+        for name in pairs(state.bots) do
+            table.insert(names, name)
+        end
+    elseif MultiBot.index and type(MultiBot.index.actives) == "table" then
+        for _, name in ipairs(MultiBot.index.actives) do
+            table.insert(names, name)
+        end
+    end
+
+    -- Alphabetical, so a bot does not change page between two repaints.
+    table.sort(names)
+    return names
+end
+
+local function pickIcon(name)
+    local unitButton = (type(MultiBot.getBot) == "function") and MultiBot.getBot(name) or nil
+    local class = unitButton and unitButton.class
+
+    if type(class) == "string" and class ~= "" then
+        return "Interface\\AddOns\\MultiBot\\Icons\\class_" .. string.lower(class) .. ".blp"
+    end
+
+    return RTSC_PICK_ICON
+end
+
+local function pickStore()
+    if MultiBot.Store and type(MultiBot.Store.EnsureUIChildStore) == "function" then
+        return MultiBot.Store.EnsureUIChildStore(RTSC_PICK_STORE)
+    end
+
+    return nil
+end
+
+local function pickSlotNames(index)
+    local store = pickStore()
+    local saved = store and store[tostring(index)]
+
+    if type(saved) ~= "table" then
+        return nil
+    end
+
+    local names = {}
+    for _, name in ipairs(saved) do
+        if type(name) == "string" and name ~= "" then
+            table.insert(names, name)
+        end
+    end
+
+    if #names == 0 then
+        return nil
+    end
+
+    return names
+end
+
 local function requestRtscState()
     local comm = MultiBot.Comm
     if comm and type(comm.RequestRtscState) == "function" then
@@ -606,8 +745,13 @@ local function refreshModeButtons()
         end
 
         -- A half-built multi-role selection was previously invisible unless you remembered which
-        -- buttons you had right-clicked.
-        local pending = rtscUI.selectorFrame and rtscUI.selectorFrame.selector or ""
+        -- buttons you had right-clicked. A picked set reads out by name, since there is no tag that
+        -- describes it.
+        local selectorFrame = rtscUI.selectorFrame
+        local pending = selectorFrame and selectorFrame.selector or ""
+        if selectorFrame and customCount(selectorFrame) > 0 then
+            pending = table.concat(selectorFrame.customNames, ", ")
+        end
         if pending ~= "" then
             tip = tip .. "\n" .. string.format(L("rtsc.selector.pending", "Pending selection: %s"), pending)
         end
@@ -621,6 +765,10 @@ end
 local function refreshRtscUI()
     refreshSlotButtons()
     refreshModeButtons()
+
+    if refreshPicker then
+        refreshPicker()
+    end
 end
 
 -- Called by MultiBotComm once a GET~RTSC stream completes.
@@ -629,6 +777,32 @@ MultiBot.OnBridgeRtscState = function()
     -- that never landed goes back to showing empty instead of lying. Marks younger than that are
     -- kept: this state can predate the command that made them (see markSlotPending).
     expirePendingSlots()
+
+    -- A picked bot that has logged out or left the group cannot be commanded any more, and keeping
+    -- it in the set would leave the count badge permanently disagreeing with the panel.
+    local selectorFrame = rtscUI and rtscUI.selectorFrame
+    if selectorFrame and customCount(selectorFrame) > 0 then
+        local state = bridgeRtsc()
+
+        if state then
+            local kept = {}
+            local keptSet = {}
+
+            for _, name in ipairs(selectorFrame.customNames) do
+                if state.bots[name] then
+                    table.insert(kept, name)
+                    keptSet[name] = true
+                end
+            end
+
+            selectorFrame.customNames = kept
+            selectorFrame.customSet = keptSet
+
+            -- Pruning is a selection change like any other, so the lock has to follow it: a set
+            -- that emptied itself must hand the rubber-band behaviour back to a plain cast.
+            applySelectionLock(hasSelection(selectorFrame))
+        end
+    end
 
     if captureSelection then
         -- A deliberate selection change has settled: record who it actually reached, so a later
@@ -955,9 +1129,13 @@ local function paintSelection(frame)
     end
 
     -- Every selection mutation funnels through here, so this is the one place the lock has to
-    -- track. An empty selector means the bar is not driving a selection, and the rubber-band
-    -- select is then exactly what a cast should do - so the lock comes off.
-    applySelectionLock(frame.selector ~= "")
+    -- track. No selection at all - neither tags nor picks - means the bar is not driving one, and
+    -- the rubber-band select is then exactly what a cast should do, so the lock comes off.
+    applySelectionLock(hasSelection(frame))
+
+    if refreshPicker then
+        refreshPicker()
+    end
 
     refreshModeButtons()
 end
@@ -989,16 +1167,19 @@ local function clearSelection(frame, sendCancel)
     end
 
     frame.selector = ""
+    forgetCustomSelection(frame)
     paintSelection(frame)
 end
 
 local function replaceSelection(frame, tag)
     -- `cancel` first: without it the new tag piles on top of whatever was already selected. It
-    -- disarms any pending save/move too, which is why the bar drops its armed state here.
+    -- disarms any pending save/move too, which is why the bar drops its armed state here. The
+    -- untagged form reaches every bot, so it also clears a hand-picked set.
     sendRtsc("cancel")
     sendRtsc("select", tag)
     armedAction = nil
 
+    forgetCustomSelection(frame)
     frame.selector = tag
     paintSelection(frame)
     refreshSelectionSoon(true)
@@ -1029,6 +1210,20 @@ reassertSelection = function()
         return
     end
 
+    -- A picked set is re-asserted the same way it was set: clear everyone, then one BOT-scoped
+    -- `select` per name. It cannot go through the tag path at all.
+    if customCount(frame) > 0 then
+        sendRtsc("cancel")
+
+        for _, name in ipairs(frame.customNames) do
+            sendRtscToBot(name, "select")
+        end
+
+        verifySelection = true
+        refreshSelectionSoon(false)
+        return
+    end
+
     local tags = selectionTags(frame)
     if #tags == 0 then
         -- Nothing explicit selected: the marquee is the intended behaviour, leave it alone.
@@ -1048,7 +1243,7 @@ end
 -- every bot that has not ticked yet, and is then overwritten by it (see RTSC_MARQUEE_SETTLE).
 scheduleSelectionRepair = function()
     local frame = rtscUI and rtscUI.selectorFrame
-    if not frame or frame.selector == "" then
+    if not hasSelection(frame) then
         -- Nothing explicit selected: the marquee is the intended behaviour here.
         return
     end
@@ -1065,6 +1260,12 @@ end
 
 -- Right-click toggles: add the tag, or drop it if it is already part of the selection.
 local function toggleSelection(frame, tag)
+    -- Adding a tag on top of a picked set would leave two scopings in force at once. The tag wins
+    -- and the picks are dropped - replaceSelection's untagged `cancel` clears them server-side too.
+    if customCount(frame) > 0 then
+        return replaceSelection(frame, tag)
+    end
+
     for _, existing in ipairs(selectionTags(frame)) do
         if existing == tag then
             return removeFromSelection(frame, tag)
@@ -1074,6 +1275,84 @@ local function toggleSelection(frame, tag)
     sendRtsc("select", tag)
 
     frame.selector = (frame.selector == "") and tag or (frame.selector .. " " .. tag)
+    paintSelection(frame)
+    refreshSelectionSoon(true)
+end
+
+-- Push a hand-picked set to the server: one untagged `cancel` (the flag is additive and nothing
+-- else ever clears it for the bots we did not pick), then one BOT-scoped `select` per name. The
+-- lock is re-asserted by paintSelection, exactly as for a tag selection.
+local function sendCustomSelection(frame)
+    sendRtsc("cancel")
+    armedAction = nil
+
+    for _, name in ipairs(frame.customNames) do
+        sendRtscToBot(name, "select")
+    end
+
+    paintSelection(frame)
+    refreshSelectionSoon(true)
+end
+
+local function setCustomSelection(frame, names)
+    frame.selector = ""
+    frame.customNames = {}
+    frame.customSet = {}
+
+    for _, name in ipairs(names or {}) do
+        if not frame.customSet[name] and #frame.customNames < RTSC_PICK_LIMIT then
+            frame.customSet[name] = true
+            table.insert(frame.customNames, name)
+        end
+    end
+
+    sendCustomSelection(frame)
+end
+
+local function reportPickLimit()
+    rtscMessageThrottled("pick.limit", string.format(L(
+        "rtsc.pick.limit",
+        "RTSC: a hand-picked selection holds at most %d bots - use a role or group button for more."
+    ), RTSC_PICK_LIMIT))
+end
+
+local function toggleCustomBot(frame, name)
+    if frame.customSet[name] then
+        local kept = {}
+        for _, existing in ipairs(frame.customNames) do
+            if existing ~= name then
+                table.insert(kept, existing)
+            end
+        end
+
+        -- `cancel` cannot be tag-scoped to a single name either, so drop this bot's flag directly
+        -- and leave the rest of the set alone.
+        sendRtscToBot(name, "cancel")
+        armedAction = nil
+
+        frame.customNames = kept
+        frame.customSet[name] = nil
+        paintSelection(frame)
+        refreshSelectionSoon(true)
+        return
+    end
+
+    if #frame.customNames >= RTSC_PICK_LIMIT then
+        reportPickLimit()
+        return
+    end
+
+    -- Same rule as the tag buttons, from the other side: picking a bot while tags are lit replaces
+    -- the tag selection rather than adding to it.
+    if frame.selector ~= "" then
+        return setCustomSelection(frame, { name })
+    end
+
+    sendRtscToBot(name, "select")
+    armedAction = nil
+
+    frame.customSet[name] = true
+    table.insert(frame.customNames, name)
     paintSelection(frame)
     refreshSelectionSoon(true)
 end
@@ -1210,13 +1489,29 @@ end
 
 local function bindSelectorLogic(selectorFrame)
     selectorFrame.selector = ""
+    -- The hand-picked half of the selection model; see the note above selectionTags.
+    selectorFrame.customNames = {}
+    selectorFrame.customSet = {}
 
     selectorFrame.doExecute = function(button, action)
-        if button.parent.selector == "" then
+        local frame = button.parent
+
+        -- A picked set has no chat-filter form, so it is dispatched one bot at a time. RTSC_PICK_LIMIT
+        -- is what keeps this from becoming a burst the send queue has to dribble out.
+        if customCount(frame) > 0 then
+            for _, name in ipairs(frame.customNames) do
+                sendRtscToBot(name, action)
+            end
+
+            refreshModeButtons()
+            return
+        end
+
+        if frame.selector == "" then
             return sendRtsc(action)
         end
 
-        local selected = MultiBot.doSplit(button.parent.selector, " ")
+        local selected = MultiBot.doSplit(frame.selector, " ")
         local others = {}
         local groupIndexes = {}
 
@@ -1260,6 +1555,296 @@ local function bindSelectorLogic(selectorFrame)
         refreshModeButtons()
     end
 
+end
+
+-- PICK PANEL --------------------------------------------------------------------------------------
+--
+-- A second row, below the selector one, listing the bots RTSC can actually reach. It is the only
+-- way to address individual bots: the tag buttons above can say "the tanks" or "group 3" and
+-- nothing finer. Membership is the bar's own state (lit = picked); the small ready-check mark is
+-- what the *server* reports as selected, so the two can be compared at a glance instead of only
+-- through the count badge on the root button.
+local function pickPageCount()
+    local total = #pickPool()
+
+    if total <= RTSC_PICK_CELLS then
+        return 1
+    end
+
+    return math.ceil(total / RTSC_PICK_CELLS)
+end
+
+local function createPickCell(pickFrame, selectorFrame, index)
+    local column = (index - 1) % RTSC_PICK_COLUMNS
+    local row = math.floor((index - 1) / RTSC_PICK_COLUMNS)
+    -- Grows downwards: the MultiBar is directly above this row, and a panel opening upwards would
+    -- cover it.
+    -- Carries the marker macro like the role and group buttons do, so "select this bot" and "open
+    -- the reticle" are one click - the left-click path is the whole point of the panel. The macro
+    -- is bound to type1 only, so the right-click toggle below never opens a reticle.
+    local button = addAedmMacro(pickFrame
+        .addButton("BOT" .. index, RTSC_PICK_CELL_X + 30 * column, -RTSC_PICK_ROW_PITCH * row, RTSC_PICK_ICON, "", "SecureActionButtonTemplate"))
+    button.doHide()
+
+    -- Built here rather than on demand: these buttons sit on a secure template, and creating and
+    -- anchoring a region on one mid-fight is exactly the kind of call MakeCombatSafe has to defer.
+    -- Show/Hide alone is safe, so the repaint below only ever toggles it.
+    button.pickMark = button:CreateTexture(nil, "OVERLAY")
+    if MultiBot.MakeCombatSafe then
+        MultiBot.MakeCombatSafe(button.pickMark)
+    end
+    button.pickMark:SetTexture(RTSC_PICK_MARK)
+    button.pickMark:SetWidth(12)
+    button.pickMark:SetHeight(12)
+    button.pickMark:SetPoint("TOPLEFT", button, "TOPLEFT", -1, 1)
+    button.pickMark:Hide()
+
+    -- Left = only this bot. That is the whole point of the panel: "move this tank, and nobody else".
+    button.doLeft = function(cell)
+        if cell.botName then
+            setCustomSelection(selectorFrame, { cell.botName })
+        end
+    end
+
+    -- Right = add/remove, the same idiom the role and group buttons use.
+    button.doRight = function(cell)
+        if cell.botName then
+            toggleCustomBot(selectorFrame, cell.botName)
+        end
+    end
+
+    return button
+end
+
+local function createPickSlot(pickFrame, selectorFrame, index)
+    -- Loading a set is a selection, so it opens the reticle too - same one-click "select and send"
+    -- motion as a role button or a bot cell.
+    local button = addAedmMacro(pickFrame
+        .addButton("SET" .. index, RTSC_PICK_SLOT_X + 30 * (index - 1), 0, RTSC_STORAGE_ICON,
+            L("tips.rtsc.pickslot"), "SecureActionButtonTemplate"))
+
+    labelStorageButton(button, index, false)
+
+    button.doLeft = function()
+        local names = pickSlotNames(index)
+        if not names then
+            rtscMessageThrottled("pick.slot", L(
+                "rtsc.pick.empty",
+                "RTSC: that saved selection is empty - right-click it to store the current one."
+            ))
+            return
+        end
+
+        -- A saved set outlives the bots in it. A name that is no longer in the pool cannot be
+        -- commanded at all, and keeping it would make the count badge disagree with the panel.
+        local pool = {}
+        for _, name in ipairs(pickPool()) do
+            pool[name] = true
+        end
+
+        local usable = {}
+        for _, name in ipairs(names) do
+            if pool[name] then
+                table.insert(usable, name)
+            end
+        end
+
+        if #usable == 0 then
+            rtscMessageThrottled("pick.slot", L(
+                "rtsc.pick.offline",
+                "RTSC: none of the bots in that saved selection are here right now."
+            ))
+            return
+        end
+
+        setCustomSelection(selectorFrame, usable)
+    end
+
+    button.doRight = function()
+        local store = pickStore()
+        if not store then
+            return
+        end
+
+        if IsShiftKeyDown() then
+            store[tostring(index)] = nil
+            if refreshPicker then
+                refreshPicker()
+            end
+            return
+        end
+
+        if customCount(selectorFrame) == 0 then
+            rtscMessageThrottled("pick.save", L(
+                "rtsc.pick.nothing",
+                "RTSC: pick some bots first - there is nothing to save."
+            ))
+            return
+        end
+
+        local saved = {}
+        for _, name in ipairs(selectorFrame.customNames) do
+            table.insert(saved, name)
+        end
+
+        store[tostring(index)] = saved
+
+        if refreshPicker then
+            refreshPicker()
+        end
+    end
+
+    return button
+end
+
+local function createPickPanel(rtscFrame, selectorFrame)
+    local pickFrame = rtscFrame
+        .addFrame("Picker", 0, RTSC_SELECTOR_Y - RTSC_PICK_ROW_PITCH, RTSC_SELECTOR_HEIGHT)
+    pickFrame.doHide()
+
+    for index = 1, RTSC_PICK_SLOTS do
+        createPickSlot(pickFrame, selectorFrame, index)
+    end
+
+    for index = 1, RTSC_PICK_CELLS do
+        createPickCell(pickFrame, selectorFrame, index)
+    end
+
+    local prevButton = pickFrame
+        .addButton("PREV", RTSC_PICK_PREV_X, 0, "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up", L("tips.rtsc.pickpage"))
+        .doHide()
+
+    local nextButton = pickFrame
+        .addButton("NEXT", RTSC_PICK_NEXT_X, 0, "Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up", L("tips.rtsc.pickpage"))
+        .doHide()
+
+    prevButton.doLeft = function()
+        pickerPage = math.max(1, pickerPage - 1)
+        if refreshPicker then
+            refreshPicker()
+        end
+    end
+
+    nextButton.doLeft = function()
+        pickerPage = math.min(pickPageCount(), pickerPage + 1)
+        if refreshPicker then
+            refreshPicker()
+        end
+    end
+
+    return pickFrame
+end
+
+-- Repaints the panel from the pool, the bar's picked set and the server's reported selection. Hung
+-- off paintSelection (every selection change) and off OnBridgeRtscState (every state read), so it
+-- needs no polling of its own.
+refreshPicker = function()
+    if not rtscUI or not rtscUI.pickFrame then
+        return
+    end
+
+    local pickFrame = rtscUI.pickFrame
+    local selectorFrame = rtscUI.selectorFrame
+    local pickButton = selectorFrame and selectorFrame.buttons["Pick"]
+
+    if pickButton then
+        -- Lit means "a hand-picked selection is in force", the same way the tag buttons read.
+        if customCount(selectorFrame) > 0 then
+            pickButton.setEnable()
+        else
+            pickButton.setDisable()
+        end
+
+        -- Per-bot scoping exists only on the bridge, so hide the control rather than leaving a
+        -- button that can only ever answer with an error - the treatment `here` and `force` get.
+        if pickAvailable() then
+            pickButton.doShow()
+        else
+            pickButton.doHide()
+            pickFrame.doHide()
+        end
+    end
+
+    if not pickFrame:IsShown() then
+        return
+    end
+
+    local names = pickPool()
+    local pages = pickPageCount()
+    pickerPage = math.max(1, math.min(pickerPage, pages))
+
+    local serverSelected = selectedBotSet()
+    local first = (pickerPage - 1) * RTSC_PICK_CELLS
+
+    for index = 1, RTSC_PICK_CELLS do
+        local cell = pickFrame.buttons["BOT" .. index]
+        local name = names[first + index]
+
+        if cell then
+            if name then
+                cell.botName = name
+                cell.setButton(pickIcon(name), string.format(L(
+                    "tips.rtsc.pickbot",
+                    "%s\n\n|cffff0000Left-click: select ONLY this bot|r\n|cffff0000Right-click: add this bot to the selection, or remove it|r"
+                ), name))
+
+                if selectorFrame.customSet[name] then
+                    cell.setEnable()
+                else
+                    cell.setDisable()
+                end
+
+                if serverSelected and serverSelected[name] then
+                    cell.pickMark:Show()
+                else
+                    cell.pickMark:Hide()
+                end
+
+                cell.doShow()
+            else
+                cell.botName = nil
+                cell.pickMark:Hide()
+                cell.doHide()
+            end
+        end
+    end
+
+    for index = 1, RTSC_PICK_SLOTS do
+        local slot = pickFrame.buttons["SET" .. index]
+        if slot then
+            local saved = pickSlotNames(index)
+
+            -- Recolour the digit rather than re-labelling: setAmount builds a fresh FontString
+            -- every call and this runs on every state read, and a 3.3.5a client never collects
+            -- the discarded ones. The digit itself never changes.
+            if slot.amount and slot.amount.SetTextColor then
+                if saved then
+                    slot.amount:SetTextColor(1, 0.82, 0)
+                else
+                    slot.amount:SetTextColor(0.6, 0.6, 0.6)
+                end
+            end
+
+            if saved then
+                slot.setEnable()
+            else
+                slot.setDisable()
+            end
+        end
+    end
+
+    local prevButton = pickFrame.buttons["PREV"]
+    local nextButton = pickFrame.buttons["NEXT"]
+
+    if prevButton and nextButton then
+        if pages > 1 then
+            prevButton.doShow()
+            nextButton.doShow()
+        else
+            prevButton.doHide()
+            nextButton.doHide()
+        end
+    end
 end
 
 local function createBrowseButton(selectorFrame)
@@ -1472,7 +2057,7 @@ function MultiBot.RTSCOnPanelOpen()
     -- change defaults to unlocked. Re-send rather than trusting the cached value; this doubles as
     -- the probe that tells the bar whether the server knows the sub-command at all.
     local frame = rtscUI and rtscUI.selectorFrame
-    applySelectionLock(frame and frame.selector ~= "", true, true)
+    applySelectionLock(hasSelection(frame), true, true)
 
     -- "RTSC force enabled" is not persisted either, and the bar reopens unlit, so push the off
     -- state out rather than leaving bots forced from a previous session. Doubles as the probe.
@@ -1494,6 +2079,12 @@ function MultiBot.RTSCOnPanelClose()
     -- gone. Drop it explicitly; this also clears any destination still in flight. Silent for the
     -- same reason as the open: closing a row is not a request for a report.
     applyForceMode(false, true, true)
+
+    -- The panel is a view of a selection that is about to be cancelled; leaving it open would show
+    -- lit picks no bot is part of any more.
+    if rtscUI and rtscUI.pickFrame then
+        rtscUI.pickFrame.doHide()
+    end
 
     local frame = rtscUI and rtscUI.selectorFrame
     if frame then
@@ -1546,7 +2137,7 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
         -- into the selection. Re-assert it now: the reticle still needs a ground click, which is
         -- far longer than the round-trip.
         local frame = rtscUI and rtscUI.selectorFrame
-        applySelectionLock(frame and frame.selector ~= "", true, true)
+        applySelectionLock(hasSelection(frame), true, true)
 
         -- Same reasoning for the force flag: it is per bot and not persisted, so a bot summoned
         -- since the toggle was set would take this cast unforced. Silent: the click the user made
@@ -1585,6 +2176,9 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
     local function selectEveryone(frame)
         sendRtsc("select")
         frame.selector = ""
+        -- The untagged `select` above is a superset of any picked set, so the picks only have to be
+        -- dropped locally - "everyone" is now the scope, and no cell should stay lit.
+        forgetCustomSelection(frame)
         paintSelection(frame)
         refreshSelectionSoon(true)
     end
@@ -1599,12 +2193,46 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
 
     local browseButton = createBrowseButton(selectorFrame)
     local moveButton, lastButton, hereButton, forceButton = createModeButtons(selectorFrame)
+    local pickFrame = createPickPanel(rtscFrame, selectorFrame)
+
+    -- Ends the row, which is what RTSC_FRAME_X is aligned against - see the note at the top.
+    local pickButton = selectorFrame
+        .addButton("Pick", 450, 0, "inv_misc_grouplooking", L(
+            "tips.rtsc.pick",
+            "Pick Bots\n\nOpen the list of bots RTSC can reach and select them by name - the only way to command a specific bot rather than a whole role or group.\n\nLeft-click to open or close the list.\nRight-click to clear the selection.\nRequires the MultiBot bridge."
+        ))
+        .setDisable()
+
+    pickButton.doLeft = function()
+        if not pickAvailable() then
+            rtscMessageThrottled("pick.bridge", L("rtsc.bridge.required", "This RTSC action requires the MultiBot bridge."))
+            return
+        end
+
+        if pickFrame:IsShown() then
+            pickFrame.doHide()
+            return
+        end
+
+        -- Open on the first page and against fresh state: the pool comes from the last GET~RTSC,
+        -- and a panel built from a minutes-old read would list bots that have since logged out.
+        pickerPage = 1
+        pickFrame.doShow()
+        refreshPicker()
+        requestRtscState()
+    end
+
+    pickButton.doRight = function(button)
+        clearSelection(button.parent, true)
+    end
 
     -- Buttons are 28 wide on a 30 pitch, so the only real gap is between the last spot slot
     -- (right edge -34) and the first selector icon (left edge +2); the second hairline goes in the
     -- 2px gap between Browse (300) and Move (330).
     createSeparator(selectorFrame, -16)
     createSeparator(selectorFrame, 301)
+    -- Pick is a selection control, not a mode, so it gets its own block at the end of the row.
+    createSeparator(selectorFrame, 421)
 
     rtscUI = {
         frame = rtscFrame,
@@ -1617,6 +2245,8 @@ function MultiBot.InitializeRTSCUI(tMultiBar)
         lastButton = lastButton,
         hereButton = hereButton,
         forceButton = forceButton,
+        pickFrame = pickFrame,
+        pickButton = pickButton,
     }
 
     refreshRtscUI()

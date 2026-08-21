@@ -1119,6 +1119,10 @@ local LIFECYCLE_ENABLE_STEPS = {
   { name = "Throttle_Init" },
   { name = "ApplyGlobalStrata" },
   { name = "Minimap_Refresh" },
+  -- The per-bot raid markers are persisted, but the toolbar button that fires them is built while
+  -- the files load, i.e. before AceDB exists. Re-read the store once it does, or a reload leaves
+  -- the button hidden until the roster is opened and the EveryBars are rebuilt.
+  { name = "UpdateBotRTIActionButton" },
 }
 
 local function runLifecycleSteps(self, steps)

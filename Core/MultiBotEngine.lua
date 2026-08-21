@@ -173,6 +173,79 @@ MultiBot.isMember = function(pName)
 	return false
 end
 
+-- MASS-INVITE FAILSAFES -----------------------------------------------------------------
+-- A raid holds 40 players including you, and mod-playerbots refuses `.playerbot bot add`
+-- past AiPlayerbot.MaxAddedBots. The invite buttons used to take their target straight from
+-- the roster length, so left-clicking "Fill Group with Bots" on an 80-bot guild roster queued
+-- 80 adds: everything past the cap came back "Failure: You have added too many bots (more
+-- than 40)" -- and the server still logged those bots in, ungrouped. Every invite start site
+-- now runs its target through clampInviteNeeds first.
+MultiBot.MAX_GROUP_SIZE = 40
+
+-- Players in the current group, counting yourself (1 when solo).
+MultiBot.getGroupSize = function()
+	local tRaid = GetNumRaidMembers()
+	if(tRaid > 0) then return tRaid end
+
+	local tParty = GetNumPartyMembers()
+	if(tParty > 0) then return tParty + 1 end
+
+	return 1
+end
+
+-- How many bots we already control, as far as the client can tell. The server counts every
+-- bot the master added, grouped or not; only the group is visible here, so this can
+-- under-count a bot that was added but never joined. The "too many bots" abort in
+-- MultiBotHandler is the backstop for that case.
+MultiBot.countGroupBots = function()
+	local tCount = 0
+	local tRaid = GetNumRaidMembers()
+
+	if(tRaid > 0) then
+		for i = 1, tRaid do
+			local tName = UnitName("raid" .. i)
+			if(tName ~= nil and MultiBot.IsBot(tName)) then tCount = tCount + 1 end
+		end
+
+		return tCount
+	end
+
+	if(GetNumPartyMembers() > 0) then
+		for i = 1, 4 do
+			local tName = UnitName("party" .. i)
+			if(tName ~= nil and MultiBot.IsBot(tName)) then tCount = tCount + 1 end
+		end
+	end
+
+	return tCount
+end
+
+-- How many bots may still be invited right now: whichever of the raid cap and the server's
+-- bot cap runs out first. Never negative.
+MultiBot.getInviteCapacity = function()
+	local tFreeSlots = MultiBot.MAX_GROUP_SIZE - MultiBot.getGroupSize()
+	local tMaxBots = MultiBot.GetMaxAddedBots and MultiBot.GetMaxAddedBots() or MultiBot.MAX_GROUP_SIZE
+	local tFreeBots = tMaxBots - MultiBot.countGroupBots()
+	local tCapacity = tFreeSlots
+
+	if(tFreeBots < tCapacity) then tCapacity = tFreeBots end
+	if(tCapacity < 0) then return 0 end
+
+	return tCapacity
+end
+
+-- Clamp a requested invite count to what can actually be added. Returns the clamped count and
+-- the capacity it was clamped against, so callers can tell the user why they got fewer bots.
+MultiBot.clampInviteNeeds = function(pNeeds)
+	local tNeeds = tonumber(pNeeds) or 0
+	local tCapacity = MultiBot.getInviteCapacity()
+
+	if(tNeeds < 0) then tNeeds = 0 end
+	if(tNeeds > tCapacity) then tNeeds = tCapacity end
+
+	return tNeeds, tCapacity
+end
+
 MultiBot.isTarget = function()
 	local tName = UnitName("target")
 
