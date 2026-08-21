@@ -846,7 +846,7 @@ local function createPvpStatsControls(controlFrame)
         return false
     end
 
-    mainButton.doLeft = function()
+    mainButton.doRight = function()
         if whisperButton:IsShown() then
             whisperButton:doHide()
             partyButton:doHide()
@@ -905,7 +905,7 @@ end
 
 local function createAllBotsCommands(controlFrame)
     local mainButton = controlFrame.addButton("AllBotsCommands", 0, 90, "Temp", MultiBot.L("tips.allbots.commandsallbots"))
-    mainButton.doLeft = function()
+    mainButton.doRight = function()
         local menu = controlFrame.frames and controlFrame.frames["AllBotsCommandsMenu"]
         if not menu then
             return
@@ -939,7 +939,7 @@ end
 local function createInviteControls(controlFrame)
     local inviteButton = controlFrame.addButton("Invite", 0, 120, "Interface\\AddOns\\MultiBot\\Icons\\invite.blp", MultiBot.L("tips.units.invite")).setEnable()
 
-    inviteButton.doRight = function()
+    inviteButton.doLeft = function()
         if GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0 then
             return
         end
@@ -950,7 +950,7 @@ local function createInviteControls(controlFrame)
         SendChatMessage(MultiBot.L("info.starting"), "SAY")
     end
 
-    inviteButton.doLeft = function(button)
+    inviteButton.doRight = function(button)
         if button.state then
             MultiBot.ShowHideSwitch(button.parent.frames["Invite"])
         end
@@ -1034,7 +1034,9 @@ local function stepUnitsPage(direction)
 end
 
 local function createBrowseButton(controlFrame)
-    local browseButton = controlFrame.addButton("Browse", 0, 180, "Interface\\AddOns\\MultiBot\\Icons\\browse.blp", MultiBot.L("tips.units.browse"))
+    -- y = 150 is the slot the RTI button used to occupy; Browse moved up into it so the control
+    -- column has no hole now that RTI lives on the left toolbar.
+    local browseButton = controlFrame.addButton("Browse", 0, 150, "Interface\\AddOns\\MultiBot\\Icons\\browse.blp", MultiBot.L("tips.units.browse"))
 
     -- Built once and retexted on every relayout; setAmount() would allocate a new FontString each
     -- time it is called.
@@ -1083,9 +1085,8 @@ function MultiBot.InitializeUnitsRootUI(tMultiBar)
     createAllBotsCommands(controlFrame)
     createInviteControls(controlFrame)
     createBrowseButton(controlFrame)
-    if MultiBot.BuildRTIControlUI then
-        MultiBot.BuildRTIControlUI(controlFrame)
-    end
+    -- RTI / Pull control used to sit here; it is a left-toolbar button now (MultiBotRTIUI.lua),
+    -- so firing it no longer means opening the roster window first.
 
     if MultiBot.bridge and MultiBot.bridge.roster and #MultiBot.bridge.roster > 0 then
         if MultiBot.SyncBridgeRosterToPlayers then

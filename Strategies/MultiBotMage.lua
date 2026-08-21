@@ -1,6 +1,6 @@
 MultiBot.addMage = function(pFrame, pCombat, pNormal)
 	local tButton = pFrame.addButton("Buff", 0, 0, "inv_elemental_primal_mana", MultiBot.L("tips.mage.buff.master"))
-	tButton.doLeft = function(pButton)
+	tButton.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.parent.frames["Buff"])
 	end
 
@@ -10,7 +10,7 @@ MultiBot.addMage = function(pFrame, pCombat, pNormal)
     buffFrame.addButton("NonCombatMana", 0, 0, "inv_elemental_primal_mana", MultiBot.L("tips.mage.buff.bmana"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "Buff", pButton.texture, "nc +bmana,?", pButton.getName())
-        pButton.getButton("Buff").doRight = function(btn)
+        pButton.getButton("Buff").doLeft = function(btn)
             MultiBot.OnOffActionToTarget(btn, "nc +bmana,?", "nc -bmana,?", btn.getName())
 		end
 	end
@@ -18,7 +18,7 @@ MultiBot.addMage = function(pFrame, pCombat, pNormal)
     buffFrame.addButton("NonCombatDps", 0, 26, "inv_elemental_primal_nether", MultiBot.L("tips.mage.buff.bdps"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "Buff", pButton.texture, "nc +bdps,?", pButton.getName())
-        pButton.getButton("Buff").doRight = function(btn)
+        pButton.getButton("Buff").doLeft = function(btn)
             MultiBot.OnOffActionToTarget(btn, "nc +bdps,?", "nc -bdps,?", btn.getName())
 		end
 	end
@@ -38,7 +38,7 @@ MultiBot.addMage = function(pFrame, pCombat, pNormal)
 	-- PLAYBOOK --
 
     pFrame.addButton("Playbook", -30, 0, "inv_misc_book_06", MultiBot.L("tips.mage.playbook.master"))
-    .doLeft = function(pButton)
+    .doRight = function(pButton)
         MultiBot.ShowHideSwitch(pButton.getFrame("Playbook"))
     end
 
@@ -118,7 +118,7 @@ MultiBot.addMage = function(pFrame, pCombat, pNormal)
 	-- DPS --
 
     pFrame.addButton("DpsControl", -60, 0, "ability_warrior_challange", MultiBot.L("tips.mage.dps.master"))
-    .doLeft = function(pButton)
+    .doRight = function(pButton)
         MultiBot.ShowHideSwitch(pButton.getFrame("DpsControl"))
     end
 

@@ -1473,14 +1473,14 @@ function MultiBot.InitializeInventoryFrame()
         runInventoryInstantAction(pButton.getName(), "open items")
     end
 
-    inventory.buttons.BankOpen.doLeft = function(pButton)
+    inventory.buttons.BankOpen.doRight = function(pButton)
         local botName = pButton.getName and pButton.getName() or nil
         if MultiBot.OpenBotBank then
             MultiBot.OpenBotBank(botName)
         end
     end
 
-    inventory.buttons.GuildBankOpen.doLeft = function(pButton)
+    inventory.buttons.GuildBankOpen.doRight = function(pButton)
         local botName = pButton.getName and pButton.getName() or nil
         if MultiBot.OpenBotGuildBank then
             MultiBot.OpenBotGuildBank(botName)

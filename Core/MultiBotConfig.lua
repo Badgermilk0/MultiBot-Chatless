@@ -297,7 +297,10 @@ end
 -- Optional left-toolbar buttons (Options -> Layout). These used to be main-menu on/off switches
 -- persisted through setSavedMainBarValue as the *strings* "true"/"false", so the getter accepts
 -- both spellings and the user's existing choice carries over untouched.
+-- Optional left-toolbar buttons and their default visibility. Loot rules is off by default: it is
+-- a set-once preference, not something you touch mid-run, so it only clutters the bar.
 local TOOLBAR_BUTTON_DEFAULTS = {
+  Loot = false,
   Creator = false,
   Beast = false,
 }

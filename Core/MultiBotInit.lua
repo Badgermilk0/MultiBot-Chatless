@@ -1,12 +1,14 @@
 MultiBot.MB_PAGE_DEFAULT = string.format("%d/%d", 0, 0)
 
--- One-time left-toolbar layout invalidation. The bar moved to fixed slots (Stay/Follow collapsed
--- from four buttons to two, and the optional buttons moved to the far end), so a layout saved by
--- shift+right-click swapping on the old grid would now stack buttons on top of each other. Drop it
--- once; individual swaps can simply be redone. This has to run before InitializeLeftCoreUI, which
--- is where BindShiftRightSwapButtons reads the saved value back.
+-- One-time left-toolbar layout invalidation. The bar has been re-slotted twice now (v2: Stay/Follow
+-- collapsed from four buttons to two and the optional buttons moved to the far end; v3: the "Combat
+-- Modes" button split into standalone Passive/Grind toggles, RTI and RTSC moved onto the bar, and
+-- Loot became an optional button), so a layout saved by shift+right-click swapping on an older grid
+-- would now stack buttons on top of each other; v4 re-ordered the whole bar. Drop it once per
+-- revision; individual swaps can simply be redone. This has to run before InitializeLeftCoreUI,
+-- which is where BindShiftRightSwapButtons reads the saved value back.
 do
-	local LEFT_BAR_SLOT_VERSION = 2
+	local LEFT_BAR_SLOT_VERSION = 4
 	local save = _G.MultiBotSave
 
 	if type(save) == "table" and (tonumber(save.leftBarSlotVersion) or 0) < LEFT_BAR_SLOT_VERSION then

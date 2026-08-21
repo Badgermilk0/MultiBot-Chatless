@@ -21,7 +21,7 @@ MultiBot.addDruid = function(pFrame, pCombat, pNormal)
 	-- PLAYBOOK --
 
 	pFrame.addButton("Playbook", -60, 0, "inv_misc_book_06", MultiBot.L("tips.druid.playbook.master"))
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.getFrame("Playbook"))
 	end
 
@@ -96,7 +96,7 @@ MultiBot.addDruid = function(pFrame, pCombat, pNormal)
 	-- DPS --
 
 	pFrame.addButton("DpsControl", -90, 0, "ability_warrior_challange", MultiBot.L("tips.druid.dps.master"))
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.getFrame("DpsControl"))
 	end
 

@@ -106,6 +106,7 @@ end
 -- Optional left-toolbar buttons. These used to be on/off switches in the main menu; bar
 -- composition belongs with the other layout settings, so they live here now.
 local TOOLBAR_BUTTON_OPTIONS = {
+  { key = "Loot", label = "options.layout.show_loot", desc = "options.layout.show_loot_desc" },
   { key = "Creator", label = "options.layout.show_creator", desc = "options.layout.show_creator_desc" },
   { key = "Beast", label = "options.layout.show_beast", desc = "options.layout.show_beast_desc" },
 }

@@ -99,7 +99,7 @@ local function registerExpandableGroup(rootButton, buttonA, buttonB)
     }
     table.insert(QuestsMenu.expandableGroups, group)
 
-    rootButton.doLeft = function()
+    rootButton.doRight = function()
         local isOpen = buttonA:IsShown() or buttonB:IsShown()
         if isOpen then
             setSubButtonsVisible(buttonA, buttonB, false)
@@ -401,22 +401,21 @@ function MultiBot.InitializeQuestsMenu(tRight)
     menu:Hide()
     QuestsMenu.expandableGroups = {}
 
-    button.doLeft = function(owner)
+    button.doRight = function(owner)
         MultiBot.ShowHideSwitch(owner.parent.frames["QuestMenu"])
     end
-    button.doRight = button.doLeft
 
     menu.addButton("AcceptAll", 0, 30, "inv_misc_note_02", MultiBot.L("tips.quests.accept")).doLeft = function()
         MultiBot.ActionToGroup("accept *")
     end
 
     local listButton = menu.addButton("Quests", 0, -30, "inv_misc_book_07", MultiBot.L("tips.quests.master"))
-    listButton.doRight = function()
+    listButton.doLeft = function()
         if questLogFrame then
             questLogFrame:Refresh()
         end
     end
-    listButton.doLeft = function()
+    listButton.doRight = function()
         if questLogFrame then
             questLogFrame:Toggle()
         end

@@ -198,7 +198,7 @@ function MultiBot.BuildDisperseUI(tLeft)
     MultiBot.frames.disperseMenu = menu
 
     button = tLeft.addButton("Disperse", buttonX, 0, "spell_nature_wispsplode", L("tips.disperse.main", "Disperse")).setDisable()
-    button.doLeft = function()
+    button.doRight = function()
         if menuOpen then
             hideDisperseMenu()
         else
@@ -206,7 +206,7 @@ function MultiBot.BuildDisperseUI(tLeft)
         end
     end
 
-    button.doRight = function()
+    button.doLeft = function()
         hideDisperseMenu()
         RunDisperseCommand("disperse disable")
     end

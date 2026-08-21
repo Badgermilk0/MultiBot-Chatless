@@ -161,7 +161,7 @@ function MultiBot.BuildLootUI(tLeft)
     MultiBot.frames.lootMenu = menu
 
     button = tLeft.addButton("Loot", buttonX, 0, "inv_misc_bag_10", L("tips.loot.main", "Loot rules")).setDisable()
-    button.doLeft = function()
+    button.doRight = function()
         if menuOpen then
             hideLootMenu()
         else
@@ -169,7 +169,7 @@ function MultiBot.BuildLootUI(tLeft)
         end
     end
 
-    button.doRight = function()
+    button.doLeft = function()
         hideLootMenu()
         RunLootCommand("nc -loot")
     end

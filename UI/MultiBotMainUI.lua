@@ -37,43 +37,21 @@ local function toggleMasters(button)
         return
     end
 
+    -- The GM button is inserted between the MultiBot Menu and the Right sub-bar, so everything to
+    -- its right shifts by one slot. The RTSC row has to shift with it or it stops being flush with
+    -- the bar's right edge (see RTSC_FRAME_X in UI/MultiBotRTSCUI.lua).
     if MultiBot.OnOffSwitch(button) then
         MultiBot.doRepos("Right", 38)
+        MultiBot.doRepos("RTSC", 38)
         MultiBot.frames["MultiBar"].frames["Masters"]:Hide()
         MultiBot.frames["MultiBar"].buttons["Masters"]:Show()
         return
     end
 
     MultiBot.doRepos("Right", -38)
+    MultiBot.doRepos("RTSC", -38)
     MultiBot.frames["MultiBar"].frames["Masters"]:Hide()
     MultiBot.frames["MultiBar"].buttons["Masters"]:Hide()
-end
-
--- The RTSC row is anchored below the MultiBar and simply shown/hidden. It used to shove the whole
--- toolbar 34px up on open and back down on close, which is what made enabling/disabling RTSC feel
--- so odd - the bar you were aiming at moved out from under the cursor, and the login restore had
--- to replay the same offset in reverse to avoid drifting.
-local function toggleRTSC(button)
-    if MultiBot.OnOffSwitch(button) then
-        MultiBot.frames["MultiBar"].frames["RTSC"]:Show()
-        -- Trains the master's marker spell and pulls the bots' real RTSC state (see
-        -- UI/MultiBotRTSCUI.lua); falls back to the old chat command if that file is missing.
-        if MultiBot.RTSCOnPanelOpen then
-            MultiBot.RTSCOnPanelOpen()
-        else
-            MultiBot.ActionToGroup("rtsc")
-        end
-        return
-    end
-
-    MultiBot.frames["MultiBar"].frames["RTSC"]:Hide()
-    -- Deliberately NOT "rtsc reset": that wipes every saved location on every bot and untrains the
-    -- master's marker spell. Closing the panel only drops the selection.
-    if MultiBot.RTSCOnPanelClose then
-        MultiBot.RTSCOnPanelClose()
-    else
-        MultiBot.ActionToGroup("rtsc cancel")
-    end
 end
 
 local function toggleRaidus(button)
@@ -675,7 +653,7 @@ local function createCombatStrategiesButton(mainFrame)
 		y = 340,
 		icon = "ability_warrior_battleshout",
 		tip = "tips.main.combat",
-		doLeft = function(button)
+		doRight = function(button)
 			if controlFrame:IsShown() then
 				controlFrame:Hide()
 				button:setDisable()
@@ -938,6 +916,14 @@ function MultiBot.InitializeMainUI(tMultiBar)
     applyMoveLockState()
 
     mainButton:SetScript("OnDragStart", function()
+        -- The menu toggle moved to right-click, and the bar drags with right-click too -- and the
+        -- click fires on button *down*, i.e. before the drag is recognised. So every drag would
+        -- flip the menu open or closed on the way. Undo the toggle this same press just made.
+        if mainButton._mbMenuToggledByDrag then
+            mainButton._mbMenuToggledByDrag = nil
+            MultiBot.ShowHideSwitch(mainButton.parent.frames[MAIN_FRAME_NAME])
+        end
+
         markMainBarInteraction(autoHideState)
         -- InitializeMainUI runs while the addon files load, i.e. before Config_Ensure has wired the
         -- AceDB profile up, so the applyMoveLockState() above can only ever latch the default. Re-read
@@ -960,8 +946,11 @@ function MultiBot.InitializeMainUI(tMultiBar)
         syncMainBarDetectorPosition(autoHideState)
         markMainBarInteraction(autoHideState)
     end)
-    mainButton.doLeft = function(button)
+    mainButton.doRight = function(button)
         markMainBarInteraction(autoHideState)
+        -- Flagged for OnDragStart above: a right-drag has already fired this handler by the time
+        -- the drag begins.
+        button._mbMenuToggledByDrag = true
         MultiBot.ShowHideSwitch(button.parent.frames[MAIN_FRAME_NAME])
     end
 
@@ -1059,7 +1048,6 @@ function MultiBot.InitializeMainUI(tMultiBar)
     local defaultMainButtonOrder = {
         "PullControl",
         "CombatStrategies",
-        "RTSC",
         "Raidus",
         "Stats",
         "Reward",
@@ -1149,18 +1137,6 @@ function MultiBot.InitializeMainUI(tMultiBar)
     wireShiftRightSwap(mainFrame.buttons["Masters"], "Masters")
 
     createMainActionButton(mainFrame, {
-        name = "RTSC",
-        y = 68,
-        icon = "ability_hunter_markedfordeath",
-        tip = "tips.main.rtsc",
-        disabled = true,
-        doLeft = function(button)
-            toggleRTSC(button)
-        end,
-    })
-    wireShiftRightSwap(mainFrame.buttons["RTSC"], "RTSC")
-
-    createMainActionButton(mainFrame, {
         name = "Raidus",
         y = 102,
         icon = "inv_misc_head_dragon_01",
@@ -1207,7 +1183,7 @@ function MultiBot.InitializeMainUI(tMultiBar)
         y = 340,
         icon = "ability_hunter_markedfordeath",
         tip = "tips.main.pullcontrol",
-        doLeft = function(button)
+        doRight = function(button)
             if not button._mbPullControlFrame then
                 button._mbPullControlFrame = createPullControlFrame(mainFrame, button)
             end

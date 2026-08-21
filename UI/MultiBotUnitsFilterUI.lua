@@ -53,11 +53,11 @@ function MultiBot.BuildFilterUI(tControl)
     filterFrame:Hide()
     filterFrame._mbSkipAutoCollapse = true
 
-    rootButton.doLeft = function(owner)
+    rootButton.doRight = function(owner)
         MultiBot.ShowHideSwitch(owner.parent.frames[FILTER_FRAME_NAME])
     end
 
-    rootButton.doRight = function(owner)
+    rootButton.doLeft = function(owner)
         local unitsButton = MultiBot.frames.MultiBar.buttons.Units
         MultiBot.Select(owner.parent, FILTER_FRAME_NAME, FILTER_ROOT_ICON)
         unitsButton.doLeft(unitsButton, nil, "none")

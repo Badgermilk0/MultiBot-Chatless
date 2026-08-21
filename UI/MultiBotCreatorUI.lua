@@ -63,7 +63,7 @@ local function addClassButton(creatorFrame, definition)
         table.insert(classButton.genderButtons, genderButton)
     end
 
-    classButton.doLeft = function(owner)
+    classButton.doRight = function(owner)
         local shouldShow = not owner.genderButtons[1]:IsShown()
 
         hideGenderButtons(creatorFrame.classButtons)
@@ -143,7 +143,7 @@ function MultiBot.InitializeCreatorUI(tLeft)
     local creatorFrame = tLeft.addFrame(CREATOR_FRAME_NAME, buttonX - 2, CREATOR_FRAME_Y)
     creatorFrame:Hide()
 
-    rootButton.doLeft = function(owner)
+    rootButton.doRight = function(owner)
         MultiBot.ShowHideSwitch(owner.parent.frames[CREATOR_FRAME_NAME])
         MultiBot.frames["MultiBar"].frames["Units"]:Hide()
     end

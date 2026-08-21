@@ -12,7 +12,7 @@ MultiBot.addShaman = function(pFrame, pCombat, pNormal)
 	local nonCombatTotemButton = pFrame.addButton(
 		"NonCombatTotem", -30, 0, "spell_nature_manaregentotem",
 		MultiBot.L("tips.shaman.ntotem.master"))
-	nonCombatTotemButton.doLeft = function(pButton)
+	nonCombatTotemButton.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.parent.frames["NonCombatTotem"])
 	end
 
@@ -24,7 +24,7 @@ MultiBot.addShaman = function(pFrame, pCombat, pNormal)
 		MultiBot.L("tips.shaman.ntotem.bmana"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "NonCombatTotem", pButton.texture, "nc +bmana,?", pButton.getName())
-		pButton.getButton("NonCombatTotem").doRight = function(btn)
+		pButton.getButton("NonCombatTotem").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "nc +bmana,?", "nc -bmana,?", btn.getName())
 		end
 	end
@@ -34,7 +34,7 @@ MultiBot.addShaman = function(pFrame, pCombat, pNormal)
 		MultiBot.L("tips.shaman.ntotem.bdps"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "NonCombatTotem", pButton.texture, "nc +bdps,?", pButton.getName())
-		pButton.getButton("NonCombatTotem").doRight = function(btn)
+		pButton.getButton("NonCombatTotem").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "nc +bdps,?", "nc -bdps,?", btn.getName())
 		end
 	end
@@ -56,7 +56,7 @@ MultiBot.addShaman = function(pFrame, pCombat, pNormal)
 	local combatTotemButton = pFrame.addButton(
 		"CombatTotem", -60, 0, "spell_nature_manaregentotem",
 		MultiBot.L("tips.shaman.ctotem.master"))
-	combatTotemButton.doLeft = function(pButton)
+	combatTotemButton.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.parent.frames["CombatTotem"])
 	end
 
@@ -68,7 +68,7 @@ MultiBot.addShaman = function(pFrame, pCombat, pNormal)
 		MultiBot.L("tips.shaman.ctotem.bmana"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "CombatTotem", pButton.texture, "co +bmana,?", pButton.getName())
-		pButton.getButton("CombatTotem").doRight = function(btn)
+		pButton.getButton("CombatTotem").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "co +bmana,?", "co -bmana,?", btn.getName())
 		end
 	end
@@ -78,7 +78,7 @@ MultiBot.addShaman = function(pFrame, pCombat, pNormal)
 		MultiBot.L("tips.shaman.ctotem.bdps"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "CombatTotem", pButton.texture, "co +bdps,?", pButton.getName())
-		pButton.getButton("CombatTotem").doRight = function(btn)
+		pButton.getButton("CombatTotem").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "co +bdps,?", "co -bdps,?", btn.getName())
 		end
 	end
@@ -98,7 +98,7 @@ MultiBot.addShaman = function(pFrame, pCombat, pNormal)
 	-- PLAYBOOK --
 
 	pFrame.addButton("Playbook", -90, 0, "inv_misc_book_06", MultiBot.L("tips.shaman.playbook.master"))
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.getFrame("Playbook"))
 	end
 
@@ -161,7 +161,7 @@ MultiBot.addShaman = function(pFrame, pCombat, pNormal)
 	-- DPS --
 
 	pFrame.addButton("DpsControl", -120, 0, "ability_warrior_challange", MultiBot.L("tips.shaman.dps.master"))
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.getFrame("DpsControl"))
 	end
 

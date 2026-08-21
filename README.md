@@ -239,11 +239,23 @@ The goal is to remove automatic UI-refresh spam.
   </tr>
   <tr>
     <td>Left toolbar</td>
-    <td><strong>Fixed slots</strong> — Disperse, Loot and Stay/Follow are always present; Creator and Beastmaster are opt-in from Options &rarr; Layout</td>
+    <td><strong>Fixed slots</strong> &mdash; left to right: Tank Attack, Attack Commands, Follow, Stay, Passive Mode, Grind Mode, Disperse, Flee Commands, Formations, RTSC Bar, Raid Marker Control &mdash; then the PlayerBot Roster and MultiBot Menu on the bar itself and Quest Menu, Group Actions, Summon Group on the right. Per-bot markers, Loot Rules, Bot Creator and Beastmaster sit past the left end (Loot/Creator/Beastmaster are opt-in from Options &rarr; Layout), so showing or hiding one never moves the rest</td>
+  </tr>
+  <tr>
+    <td>Combat modes</td>
+    <td><strong>Split</strong> &mdash; the single "Combat Modes" button and its selector dropdown are replaced by standalone <strong>Passive</strong> and <strong>Grind</strong> toggles, so the lit button is the mode that is actually running; Stay/Follow/Grind clear each other's lit state the way the server commands cancel each other</td>
+  </tr>
+  <tr>
+    <td>RTI / RTSC placement</td>
+    <td><strong>Moved onto the toolbar</strong> &mdash; RTI left the Units (PlayerBot Main Menu) panel and RTSC left the AddOn Configuration Menu; both are one click away now. RTI's scope buttons are a vertical strip (All, raid groups 1-8, Attack, Pull) with the icon picker opening sideways</td>
+  </tr>
+  <tr>
+    <td>Button naming</td>
+    <td><strong>Consistent</strong> &mdash; every toolbar button and dropdown entry now follows one tooltip shape: a Title Case name, a white sentence saying what it does, then the red left/right-click lines with their grey <code>(Executed by: ...)</code> scope. "Tank Main Menu" is <strong>Tank Attack</strong>, "Attack/Flee Main Menu" are <strong>Attack/Flee Commands</strong>, "PlayerBot Main Menu" is <strong>PlayerBot Roster</strong>, "AddOn Configuration Menu" is <strong>MultiBot Menu</strong>, RTI reads as <strong>Raid Marker Control</strong></td>
   </tr>
   <tr>
     <td>RTSC bar</td>
-    <td><strong>Improved</strong> numbered location slots, faded controls plus a hint until the marker spell is learned, a report when a command reaches no bot, and a <strong>Force</strong> toggle that makes bots finish a move instead of breaking it off as soon as something aggroes</td>
+    <td><strong>Improved</strong> numbered location slots, faded controls plus a hint until the marker spell is learned, a report when a command reaches no bot, and a <strong>Force</strong> toggle that makes bots finish a move instead of breaking it off as soon as something aggroes. The row is now <strong>right-aligned with the MultiBar</strong> above it instead of dangling out past its right end, and it follows the bar when the GameMaster button is toggled</td>
   </tr>
   <tr>
     <td>Loot Master frame</td>

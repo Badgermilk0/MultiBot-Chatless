@@ -2,7 +2,7 @@
 MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
 	-- NON COMBAT STRATEGIES --
 	--[[local tButton = pFrame.addButton("Buff", 0, 0, "spell_shadow_lifedrain02", MultiBot.tips.warlock.buff.master)
-	tButton.doLeft = function(pButton)
+	tButton.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.parent.frames["Buff"])
 	end
 
@@ -12,7 +12,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
 	tFrame.addButton("BuffHealth", 0, 0, "spell_shadow_lifedrain02", MultiBot.tips.warlock.buff.bhealth)
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "Buff", pButton.texture, "nc +bhealth,?", pButton.getName())
-		pButton.getButton("Buff").doRight = function(pButton)
+		pButton.getButton("Buff").doLeft = function(pButton)
 			MultiBot.OnOffActionToTarget(pButton, "nc +bhealth,?", "nc -bhealth,?", pButton.getName())
 		end
 	end
@@ -20,7 +20,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
 	tFrame.addButton("BuffMana", 0, 26, "spell_shadow_siphonmana", MultiBot.tips.warlock.buff.bmana)
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "Buff", pButton.texture, "nc +bmana,?", pButton.getName())
-		pButton.getButton("Buff").doRight = function(pButton)
+		pButton.getButton("Buff").doLeft = function(pButton)
 			MultiBot.OnOffActionToTarget(pButton, "nc +bmana,?", "nc -bmana,?", pButton.getName())
 		end
 	end
@@ -28,7 +28,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
 	tFrame.addButton("BuffDps", 0, 52, "spell_shadow_haunting", MultiBot.tips.warlock.buff.bdps)
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "Buff", pButton.texture, "nc +bdps,?", pButton.getName())
-		pButton.getButton("Buff").doRight = function(pButton)
+		pButton.getButton("Buff").doLeft = function(pButton)
 			MultiBot.OnOffActionToTarget(pButton, "nc +bdps,?", "nc -bdps,?", pButton.getName())
 		end
 	end
@@ -124,7 +124,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
 	fStones:Hide()
 	fStones.activeStone = nil
 
-	btnStones.doLeft = function() MultiBot.ShowHideSwitch(fStones) end
+	btnStones.doRight = function() MultiBot.ShowHideSwitch(fStones) end
 
 	local stoneButtons = {}
 	local stoneList = {
@@ -229,7 +229,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
 		end
 	end
 
-	btnSoulstones.doLeft = function() MultiBot.ShowHideSwitch(fSoul) end
+	btnSoulstones.doRight = function() MultiBot.ShowHideSwitch(fSoul) end
 
 	local function ToggleSS(pButton, label, cmd)
 		local target = pButton.getName()
@@ -280,7 +280,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
     local fPets = pFrame.addFrame("Pets", -212, 30)
     fPets:Hide()
     fPets.activePet = nil
-    btnPets.doLeft = function() MultiBot.ShowHideSwitch(fPets) end
+    btnPets.doRight = function() MultiBot.ShowHideSwitch(fPets) end
 
     local petList = {
       {"Imp",        "imp",        "spell_shadow_summonimp"},
@@ -365,7 +365,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
 	-- DPS --
 
 	pFrame.addButton("DpsControl", -30, 0, "ability_warrior_challange", MultiBot.L("tips.warlock.dps.master"))
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.getFrame("DpsControl"))
 	end
 
@@ -446,7 +446,7 @@ MultiBot.addWarlock = function(pFrame, pCombat, pNormal)
    fCurses:Hide()
    fCurses.activeCurse = nil
 
-   btnCurses.doLeft = function() MultiBot.ShowHideSwitch(fCurses) end
+   btnCurses.doRight = function() MultiBot.ShowHideSwitch(fCurses) end
 
    local curseButtons = {}
 

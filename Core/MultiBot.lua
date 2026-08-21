@@ -140,21 +140,28 @@ end
 -- of -34 moves one button further left. This is the ONLY place these numbers live: the old
 -- refreshLeftLayout() reflow in MultiBotMainUI is gone, so nothing recomputes them at runtime and
 -- BindShiftRightSwapButtons stays the sole owner of user-moved positions.
--- Contextual / optional buttons (BotRTI, Creator, Beast) sit at the far end on purpose: showing or
--- hiding one of them then never moves anything else on the bar.
+-- Reading the bar left to right, the always-visible half runs: Tank Attack, Attack Commands,
+-- Follow, Stay, Passive, Grind, Disperse, Flee Commands, Formations, RTSC, Raid Markers -- i.e.
+-- targeting first, then stance, then positioning, then the two marker panels closest to the
+-- PlayerBot Roster / MultiBot Menu buttons that follow on the MultiBar itself.
+-- Contextual / optional buttons (BotRTI, Loot, Creator, Beast) sit at the far end on purpose:
+-- showing or hiding one of them then never moves anything else on the bar.
 local LEFT_BAR_SLOTS = {
-  Format   = 0,
-  Disperse = -34,
-  Loot     = -68,
+  RTI      = 0,
+  RTSC     = -34,
+  Format   = -68,
   Flee     = -102,
-  Stay     = -136,
-  Follow   = -170,
-  Mode     = -204,
-  Attack   = -238,
-  Tanker   = -272,
-  BotRTI   = -306,
-  Creator  = -340,
-  Beast    = -374,
+  Disperse = -136,
+  Grind    = -170,
+  Passive  = -204,
+  Stay     = -238,
+  Follow   = -272,
+  Attack   = -306,
+  Tanker   = -340,
+  BotRTI   = -374,
+  Loot     = -408,
+  Creator  = -442,
+  Beast    = -476,
 }
 
 function MultiBot.GetLeftBarSlotX(name)

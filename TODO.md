@@ -86,6 +86,76 @@
 
 ## Fonctions déjà ajoutées / migrées
 
+### One click convention everywhere: right opens, left executes
+
+Buttons disagreed with each other. Flee and Attack ran their command on **left** and opened their
+list on **right**; Formation, Disperse, Loot and the Raid Marker Control did the opposite; the
+dozens of pure dropdown roots (RTSC, Creator, Beast, GroupActions, Quests, Units filter/roster,
+the per-bot EveryBar panels, every per-class strategy list) opened on **left** with nothing on
+right. The rule is now uniform:
+
+* **Right-click opens** — any panel, dropdown, sub-bar or window.
+* **Left-click executes** — the button's command. A button with nothing to run does nothing on
+  left-click; that is deliberate, so the two sides never trade places from button to button.
+
+56 openers moved to right-click and 6 buttons had their two sides swapped, across `Core/
+MultiBotEvery.lua`, all ten `Strategies/*`, and the Formation / Disperse / Loot / RTI / RTSC /
+Beast / Creator / GroupActions / Quests / GM / Units (filter, roster, invite, PvP stats, all-bots)
+/ MultiBot-menu / bot-bank UIs. Flee and Attack already followed it and are untouched.
+
+Not changed, on purpose:
+
+* **The per-bot roster button** (a bot's name in Units). Right-click there is
+  `.playerbot bot remove`; applying the rule would move a destructive action onto left-click,
+  where a mis-click kicks a bot out of the group. Left still opens that bot's EveryBar.
+* **The Units root button**, whose `doLeft(button, roster, filter)` is a refresh API called from
+  seven places, and the **RTSC Browse** / roster **Browse** buttons, which page a row rather than
+  open a panel.
+
+Things this had to fix along the way — each one silently breaks otherwise:
+
+* **Leaf buttons re-bind the root.** Picking a default blessing/aspect/totem/aura/presence made
+  the leaf write `getButton("Seal").doRight`, which is now the root's *opener*. All 38 of those
+  re-bindings write `doLeft` instead, so choosing a default no longer destroys the button that
+  opens the list.
+* **Two buttons already owned a `doRight`** (`Masters` → `/MultiBot`, Units `Filter` → reset to
+  "none"). Those are swaps, not moves; the rename alone would have left the second assignment
+  winning and the opener dead.
+* **Login restore replays clicks.** `restoreEnableOnlyLeftToggle` (Masters, RTSC) replayed
+  `doLeft` to reopen a panel that was left open; renamed to `restoreEnableOnlyOpenToggle` and it
+  replays `doRight`. The quest-log refresh in `MultiBotHandler` calls `doLeft` now.
+* **The MultiBot bar drags with right-click**, and clicks fire on button *down* — so every drag
+  toggled the menu on the way. `OnDragStart` undoes the toggle its own press just made.
+* **Tooltips document the click sides.** 67 locale entries had their red click-hint lines
+  swapped. Body prose and right-**drag** hints were left alone.
+
+### Combat lockdown (buttons that "did nothing" in combat)
+
+* **Root cause.** `newButton` builds its buttons from `ActionButtonTemplate`, and the whole RTSC
+  bar passes `SecureActionButtonTemplate` explicitly (that is what makes `addMacro`'s
+  `SetAttribute("type1", "macro")` cast the aedm marker). Both are *secure* templates, so those
+  buttons are **protected frames**: while `InCombatLockdown()` is true, insecure code may not
+  Show/Hide/move/resize/re-attribute them, and the blocked call raises ADDON_ACTION_BLOCKED —
+  which aborts the whole script handler. `newButton`'s `PostClick` opens with the pressed-look
+  `SetPoint`/`SetSize`, so in combat the block killed the handler *before* it reached
+  `doLeft`/`doRight`. The click did nothing, and with `scriptErrors` off on this client it did so
+  silently.
+* **Fix** (`Core/MultiBotCombat.lua`, new, loaded right after `Core/MultiBot.lua`):
+  `MultiBot.MakeCombatSafe(widget)` swaps the ~20 protected widget methods for wrappers that run
+  the call when it is legal and otherwise queue it, replaying the queue on `PLAYER_REGEN_ENABLED`.
+  Nothing throws any more, so the button's action always runs and the cosmetic half catches up
+  when combat drops. Applied in `MultiBot.newButton` (button + its icon/border/amount regions) and
+  `MultiBot.catButton` — the only two factories that can produce a protected frame. Deliberately
+  **not** applied to `newFrame`/`wowButton`/`movButton`/`boxButton`: those are insecure widgets on
+  unprotected parents, and MultiBot windows sit in `UISpecialFrames`, which ESC walks from a
+  secure path.
+* **Still impossible, by client rule:** showing/hiding a *secure* button mid-fight (queued to
+  combat end instead — only the RTSC row is affected), and `MultiBot.SpellToMacro`, whose
+  `CreateMacro`/`PickupMacro` are protected *APIs*. The latter now reports `info.combat_locked`
+  via `MultiBot.WarnCombatLocked()` instead of dying inside the click handler.
+* `ADDON_ACTION_BLOCKED` is logged to the `core` debug channel (`/mbdebug on core`) so anything
+  still blocked can be named rather than guessed at.
+
 ### Bridge / chatless
 
 * Handshake bridge `HELLO` / `HELLO_ACK`.
@@ -238,6 +308,44 @@
   * Visibilité de `Creator` / `Beast` déplacée dans Options → Layout (mêmes clés sauvegardées,
     le choix existant est conservé) ; ces deux boutons sont placés à l'extrémité de la barre pour
     que les afficher/masquer ne déplace plus rien.
+* Passe anti-encombrement de la barre de gauche (août 2026, `leftBarSlotVersion` = 3) :
+  * Le bouton unique « Combat Modes » (et son dropdown de sélection au clic droit) est remplacé
+    par deux bascules indépendantes **Passive** et **Grind** : le bouton allumé est le mode
+    réellement actif, au lieu d'un bouton dont le sens dépendait d'un sous-menu.
+    `Passive` / `Grind` / `Stay` / `Follow` se dés-allument mutuellement, comme les commandes
+    serveur s'annulent entre elles.
+  * `Loot` (règles de butin) devient un bouton **optionnel** (Options → Layout, masqué par
+    défaut) et rejoint `Creator` / `Beast` à l'extrémité de la barre.
+  * `RTI` quitte le panneau Units (« PlayerBot Main Menu ») pour la barre de gauche : bande
+    verticale (All, groupes 1-8, Attack, Pull) avec le sélecteur d'icônes qui s'ouvre
+    latéralement (`addScopeDropdown(..., sideways)`).
+  * La bascule `RTSC` quitte le menu « AddOn Configuration » pour la barre de gauche ; la clé
+    sauvegardée `RTSC` est inchangée, donc la préférence existante est conservée.
+* Passe d'ordonnancement + nommage (août 2026, `leftBarSlotVersion` = 4) :
+  * Ordre de la barre, de gauche à droite : Tank Attack, Attack Commands, Follow, Stay,
+    Passive Mode, Grind Mode, Disperse, Flee Commands, Formations, RTSC Bar,
+    Raid Marker Control, puis PlayerBot Roster / MultiBot Menu sur la MultiBar elle-même et
+    Quest Menu / Group Actions / Summon Group à droite. Les boutons contextuels et optionnels
+    (`BotRTI`, `Loot`, `Creator`, `Beast`) restent à l'extrémité gauche.
+  * La barre RTSC est **alignée à droite** sur la MultiBar (`RTSC_FRAME_X` = -318 : le bord
+    droit du bouton `Force`, à x = 420, tombe sur celui de `Summon Group`, à +102). Elle suit
+    le décalage de 38 px appliqué quand le bouton GameMaster apparaît (`doRepos("RTSC", ...)`
+    dans `toggleMasters`).
+  * Passe de nommage sur tous les boutons de la barre et leurs dropdowns (76 tooltips) : un seul
+    gabarit — nom en Title Case, une phrase blanche décrivant l'action, puis les lignes rouges
+    clic gauche / clic droit avec leur portée grise `(Executed by: ...)`. Les blocs
+    `|cffffffff` non fermés sont corrigés. Renommages notables : « Tank Main Menu » →
+    **Tank Attack**, « Attack/Flee Main Menu » → **Attack/Flee Commands**, « Formation Main
+    Menu » → **Formations**, « PlayerBot Main Menu » → **PlayerBot Roster**, « AddOn
+    Configuration Menu » → **MultiBot Menu**, « Open Quests Menu » → **Quest Menu**,
+    « Group Actions Selector » → **Group Actions**, « Group Summon » → **Summon Group**,
+    RTI → **Raid Marker Control** (l'acronyme reste dans le corps du tooltip).
+  * Nettoyage de la même passe : plus aucun titre « ... Main Menu » dans le fichier de locale
+    (les menus de classe des EveryBars deviennent « Mage Buffs », « Paladin Blessings »,
+    « Combat Auras », « <Classe> DPS Roles », ...), typo « Shamam » corrigée, les 91 codes
+    couleur `|cf9999999` normalisés en `|cff999999`, et les clés orphelines `tips.main.creator`
+    / `tips.main.beast` supprimées (plus rien ne les lit depuis le passage de Creator/Beast dans
+    Options → Layout).
   * Menu principal : 16 → 11 entrées, regroupées panneaux → comportement → actions → GM.
   * Boutons racines : l'état allumé signifie désormais « fonction active » et non « menu ouvert »
     (Disperse affiche la distance en cours, Loot s'allume quand le loot bot est activé).
@@ -396,6 +504,8 @@
   * déclencher `pull rti target`.
 * Support bridge `RUN~RTI`.
 * Allowlist bridge pour les commandes RTI.
+* Contrôle RTI déplacé du panneau Units vers la barre de gauche (bande verticale, sélecteur
+  d'icônes latéral).
 
 ### Pull / Combat / Position
 

@@ -13,7 +13,7 @@ globals = {
     "GetNumGroupMembers", "GetNumSubgroupMembers", "C_Timer", "UnitClass", "InspectUnit", "InspectFrame", "HideUIPanel",
     "tinsert", "strtrim", "wipe", "UnitName", "GetRealmName", "GameTooltip", "GameTooltip_Hide", "MultiBotDB", "SlashCmdList",
     "GetScreenWidth", "strsub", "strlen", "GetNumTalents", "UnitLevel", "IsSpellKnown", "GetInventoryItemLink",
-    "GetItemInfo", "floor", "GetMacroInfo",
+    "GetItemInfo", "floor", "GetMacroInfo", "InCombatLockdown",
     "CreateMacro", "PickupMacro", "UnitSex", "UnitRace", "StaticPopupDialogs", "ACCEPT", "CANCEL", "StaticPopup_Show",
     "MultiBotPVPFrame", "GetItemIcon", "OKAY", "_MB_getIcon", "_MB_applyDesat", "_MB_applyDesatToTexture", "unpack",
 	"CheckInteractDistance", "Minimap", "GetScreenHeight", "GetCursorPosition", "InterfaceOptionsFrame_OpenToCategory", "TimerAfter",

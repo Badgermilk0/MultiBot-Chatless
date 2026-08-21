@@ -74,11 +74,11 @@ function MultiBot.BuildRosterUI(tControl)
     rosterFrame:Hide()
     rosterFrame._mbSkipAutoCollapse = true
 
-    rootButton.doLeft = function(owner)
+    rootButton.doRight = function(owner)
         MultiBot.ShowHideSwitch(owner.parent.frames[ROSTER_FRAME_NAME])
     end
 
-    rootButton.doRight = function(owner)
+    rootButton.doLeft = function(owner)
         local unitsButton = MultiBot.frames.MultiBar.buttons.Units
         MultiBot.Select(owner.parent, ROSTER_FRAME_NAME, "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_1")
         unitsButton.doLeft(unitsButton, "favorites")

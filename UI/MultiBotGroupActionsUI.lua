@@ -47,7 +47,7 @@ function MultiBot.InitializeGroupActionsUI(tRight)
     local menu = tRight.addFrame("GroupActionsMenu", 34, 34, 32, 96)
     menu:Hide()
 
-    mainButton.doLeft = function(owner)
+    mainButton.doRight = function(owner)
         local targetMenu = owner and owner.parent and owner.parent.frames and owner.parent.frames["GroupActionsMenu"]
         if not targetMenu then
             return

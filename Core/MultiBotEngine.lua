@@ -426,6 +426,13 @@ MultiBot.LoadPortal = function(pButton, pValue)
 end
 
 MultiBot.SpellToMacro = function(pName, pSpell, pTexture)
+	-- The one thing Core/MultiBotCombat.lua cannot rescue: CreateMacro and PickupMacro are
+	-- protected *client APIs*, blocked in combat no matter what frame asks. Say so instead of
+	-- erroring out of the click handler with nothing on the cursor.
+	if(MultiBot.IsCombatLocked and MultiBot.IsCombatLocked()) then
+		return MultiBot.WarnCombatLocked and MultiBot.WarnCombatLocked()
+	end
+
 	--local tGlobal, tAmount = GetNumMacros()
 	local _, tAmount = GetNumMacros()
 
@@ -1201,6 +1208,12 @@ end
 
 MultiBot.newButton = function(pParent, pX, pY, pSize, pTexture, pTip, oTemplate)
 	local button = CreateFrame("Button", nil, pParent, MultiBot.IF(oTemplate ~= nil, oTemplate, "ActionButtonTemplate"))
+	-- ActionButtonTemplate is a secure template, so this button is a *protected* frame: every
+	-- SetPoint/SetSize/Show/EnableMouse/RegisterForClicks/SetAttribute below -- and the PostClick
+	-- and OnLeave scripts further down -- is illegal while in combat, and the block aborts the
+	-- handler it happens in. Wrap first so they defer instead of throwing and swallowing the
+	-- button's action. See Core/MultiBotCombat.lua.
+	if(MultiBot.MakeCombatSafe) then MultiBot.MakeCombatSafe(button) end
 	if(pParent and pParent.GetFrameLevel and button.SetFrameLevel) then
 		button:SetFrameLevel((pParent:GetFrameLevel() or 0) + 5)
 	end
@@ -1209,11 +1222,16 @@ MultiBot.newButton = function(pParent, pX, pY, pSize, pTexture, pTip, oTemplate)
 	button:Show()
 
 	button.icon = button:CreateTexture(nil, "BACKGROUND")
+	-- The lit/greyed state (setEnable/setDisable, OnOffSwitch) runs through these two regions on
+	-- every toggle, mid-fight included; wrap them too rather than bet on regions of a protected
+	-- frame being exempt.
+	if(MultiBot.MakeCombatSafe) then MultiBot.MakeCombatSafe(button.icon) end
 	button.icon:SetTexture(MultiBot.SafeTexturePath(pTexture))
 	button.icon:SetAllPoints(button)
 	button.icon:Show()
 
 	button.border = button:CreateTexture(nil, "ARTWORK")
+	if(MultiBot.MakeCombatSafe) then MultiBot.MakeCombatSafe(button.border) end
 	button.border:SetTexture("Interface\\AddOns\\MultiBot\\Icons\\border.blp")
 	button.border:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 2, -2)
 	button.border:SetSize(pSize + 4, pSize + 4)
@@ -1278,6 +1296,7 @@ MultiBot.newButton = function(pParent, pX, pY, pSize, pTexture, pTip, oTemplate)
 	button.setAmount = function(pAmount)
 		if(button.amount ~= nil) then button.amount:Hide() end
 		button.amount = button:CreateFontString(nil, "ARTWORK")
+		if(MultiBot.MakeCombatSafe) then MultiBot.MakeCombatSafe(button.amount) end
 		button.amount:SetFont("Fonts\\ARIALN.ttf", 13, "OUTLINE")
 		button.amount:SetPoint("BOTTOMRIGHT", 0, 0)
 		button.amount:SetText(pAmount)
@@ -1929,6 +1948,8 @@ end
 
 MultiBot.catButton = function(pParent, pX, pY, pWidth, pHeight)
 	local button = CreateFrame("CheckButton", nil, pParent, "SecureActionButtonTemplate");
+	-- Secure template, same story as newButton: protected frame, wrap before the first call.
+	if(MultiBot.MakeCombatSafe) then MultiBot.MakeCombatSafe(button) end
 	button:SetPoint("BOTTOMRIGHT", pX, pY)
 	button:SetSize(pWidth, pHeight)
 	button:Show()

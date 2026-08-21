@@ -44,11 +44,11 @@ function MultiBot.BuildFormationUI(tLeft)
         MultiBot.L("tips.format.master")
     )
 
-    formatButton.doLeft = function(button)
+    formatButton.doRight = function(button)
         MultiBot.ShowHideSwitch(button.parent.frames[FORMATION_FRAME_NAME])
     end
 
-    formatButton.doRight = function()
+    formatButton.doLeft = function()
         MultiBot.ActionToGroup("formation")
     end
 

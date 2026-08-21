@@ -9,7 +9,14 @@ if not MultiBot then return end
 
 local RTSC_FRAME_NAME = "RTSC"
 local RTSC_SELECTOR_NAME = "Selector"
-local RTSC_FRAME_X = -2
+-- Right-aligned with the MultiBar above it. The bar's rightmost button is Group Summon, whose
+-- right edge sits at MultiBar_right + 102 (the Right sub-frame is offset +34 and the button is at
+-- x = 68); this row's rightmost button is Force, at selector x = 420. Anchoring the row at -318
+-- therefore puts the two right edges flush (-318 + 420 = 102). The row is wider than the bar
+-- (720px vs 550px), so it still runs past the left end -- but everything here is BOTTOMRIGHT
+-- anchored and grows leftwards, so the right edge is the one that reads as "aligned". It used to
+-- sit at -2, which left it dangling 316px out to the right of the bar.
+local RTSC_FRAME_X = -318
 local RTSC_FRAME_Y = -34
 local RTSC_SELECTOR_Y = 2
 local RTSC_SELECTOR_HEIGHT = 28

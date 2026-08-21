@@ -155,11 +155,11 @@ function MultiBot.BuildGmUI(tMultiBar)
     local mainButton = tMultiBar.addButton("Masters", 38, 0, "mail_gmicon", MultiBot.L("tips.game.master"))
     mainButton:doHide()
 
-    mainButton.doLeft = function(owner)
+    mainButton.doRight = function(owner)
         MultiBot.ShowHideSwitch(owner.parent.frames["Masters"])
     end
 
-    mainButton.doRight = function()
+    mainButton.doLeft = function()
         MultiBot.doSlash("/MultiBot", "")
     end
 
@@ -196,7 +196,7 @@ function MultiBot.BuildGmUI(tMultiBar)
     local portalFrame = mastersFrame.addFrame("Portal", 30, 36)
     portalFrame:Hide()
 
-    portalButton.doLeft = function()
+    portalButton.doRight = function()
         MultiBot.ShowHideSwitch(portalFrame)
     end
 

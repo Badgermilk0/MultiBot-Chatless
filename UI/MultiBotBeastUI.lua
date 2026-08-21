@@ -33,7 +33,7 @@ function MultiBot.InitializeBeastUI(tLeft)
     local beastFrame = tLeft.addFrame(BEAST_FRAME_NAME, buttonX - 2, BEAST_FRAME_Y)
     beastFrame:Hide()
 
-    rootButton.doLeft = function(owner)
+    rootButton.doRight = function(owner)
         MultiBot.ShowHideSwitch(owner.parent.frames[BEAST_FRAME_NAME])
     end
 

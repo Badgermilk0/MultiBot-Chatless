@@ -979,6 +979,12 @@ local function getMainBarButton(buttonName)
 	return main and main.buttons and main.buttons[buttonName]
 end
 
+local function getLeftBarButton(buttonName)
+	local multiBar = MultiBot.frames and MultiBot.frames["MultiBar"]
+	local left = multiBar and multiBar.frames and multiBar.frames["Left"]
+	return left and left.buttons and left.buttons[buttonName]
+end
+
 local function getMastersBarButton(buttonName)
 	local multiBar = MultiBot.frames and MultiBot.frames["MultiBar"]
 	local masters = multiBar and multiBar.frames and multiBar.frames["Masters"]
@@ -1016,7 +1022,10 @@ local function restoreBinaryLeftToggle(saveKey, getButton)
 	end
 end
 
-local function restoreEnableOnlyLeftToggle(saveKey, getButton, onEnabled)
+-- Replays the button's *open* click at login to restore a panel that was left open. That is
+-- right-click since the click convention was unified (right opens, left executes), so this
+-- replays doRight -- replaying doLeft would fire the button's command instead.
+local function restoreEnableOnlyOpenToggle(saveKey, getButton, onEnabled)
 	if getSavedMainBarValue(saveKey) ~= "true" then return end
 
 	local button = getButton()
@@ -1030,8 +1039,8 @@ local function restoreEnableOnlyLeftToggle(saveKey, getButton, onEnabled)
 		button.setDisable()
 	end
 
-	if button.doLeft then
-		button.doLeft(button)
+	if button.doRight then
+		button.doRight(button)
 	end
 end
 
@@ -1049,14 +1058,16 @@ local function restoreMainBarSavedStates()
 		return getMainBarButton("Reward")
 	end)
 
-	restoreEnableOnlyLeftToggle("Masters", function()
+	restoreEnableOnlyOpenToggle("Masters", function()
 		return getMainBarButton("Masters")
 	end, function()
 		MultiBot.GM = true
 	end)
 	-- No pre-offset any more: toggleRTSC shows/hides the row in place instead of moving the bar.
-	restoreEnableOnlyLeftToggle("RTSC", function()
-		return getMainBarButton("RTSC")
+	-- The toggle lives on the left toolbar now (it used to be a main-menu button), but the saved
+	-- key is unchanged so an existing preference still restores.
+	restoreEnableOnlyOpenToggle("RTSC", function()
+		return getLeftBarButton("RTSC")
 	end)
 
 	if MultiBot.ApplyToolbarVisibility then
@@ -1504,7 +1515,7 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 		setSavedMainBarValue("Reward", MultiBot.IF(MultiBot.reward.state, "true", "false"))
 
 		setSavedMainBarValue("Masters", mainButtonState("Masters"))
-		setSavedMainBarValue("RTSC", mainButtonState("RTSC"))
+		setSavedMainBarValue("RTSC", MultiBot.IF(leftButtons and leftButtons["RTSC"] and leftButtons["RTSC"].state, "true", "false"))
 		-- Creator/Beast are deliberately NOT written here any more: they are Options -> Layout
 		-- checkboxes now, so there is no main-menu button to read a state from and this would
 		-- overwrite the user's choice with "false" on every logout.
@@ -2446,7 +2457,9 @@ function MultiBot.HandleMultiBotEvent(event, ...)
 			local multiBar = MultiBot.frames and MultiBot.frames["MultiBar"]
 			local rightFrame = multiBar and multiBar.frames and multiBar.frames["Right"]
 			local tButton = rightFrame and rightFrame.buttons and rightFrame.buttons["Quests"]
-			if(tButton and tButton.doRight) then tButton.doRight(tButton) end
+			-- Left is the quest log's Refresh half since the click convention was unified
+			-- (right opens the window, left runs the command).
+			if(tButton and tButton.doLeft) then tButton.doLeft(tButton) end
 		end
 
 		if(MultiBot.TimerAfter) then

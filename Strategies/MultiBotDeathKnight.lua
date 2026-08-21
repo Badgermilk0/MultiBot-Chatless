@@ -1,6 +1,6 @@
 MultiBot.addDeathKnight = function(pFrame, pCombat, pNormal)
 	local tButton = pFrame.addButton("Presence", 0, 0, "spell_deathknight_bloodpresence", MultiBot.L("tips.deathknight.presence.master")).setDisable()
-	tButton.doLeft = function(pButton)
+	tButton.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.getFrame("Presence"))
 	end
 
@@ -10,7 +10,7 @@ MultiBot.addDeathKnight = function(pFrame, pCombat, pNormal)
 	tFrame.addButton("Unholy", 0, 0, "spell_deathknight_unholypresence", MultiBot.L("tips.deathknight.presence.unholy"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "Presence", pButton.texture, "co +unholy,?", pButton.getName())
-		pButton.getButton("Presence").doRight = function()
+		pButton.getButton("Presence").doLeft = function()
 			MultiBot.OnOffActionToTarget(pButton, "co +unholy,?", "co -unholy,?", pButton.getName())
 		end
 	end
@@ -18,7 +18,7 @@ MultiBot.addDeathKnight = function(pFrame, pCombat, pNormal)
 	tFrame.addButton("Frost", 0, 26, "spell_deathknight_frostpresence", MultiBot.L("tips.deathknight.presence.frost"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "Presence", pButton.texture, "co +frost,?", pButton.getName())
-		pButton.getButton("Presence").doRight = function()
+		pButton.getButton("Presence").doLeft = function()
 			MultiBot.OnOffActionToTarget(pButton, "co +frost,?", "co -frost,?", pButton.getName())
 		end
 	end
@@ -26,7 +26,7 @@ MultiBot.addDeathKnight = function(pFrame, pCombat, pNormal)
 	tFrame.addButton("Blood", 0, 52, "spell_deathknight_bloodpresence", MultiBot.L("tips.deathknight.presence.blood"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "Presence", pButton.texture, "co +blood,?", pButton.getName())
-		pButton.getButton("Presence").doRight = function()
+		pButton.getButton("Presence").doLeft = function()
 			MultiBot.OnOffActionToTarget(pButton, "co +blood,?", "co -blood,?", pButton.getName())
 		end
 	end
@@ -50,7 +50,7 @@ MultiBot.addDeathKnight = function(pFrame, pCombat, pNormal)
 	-- DPS --
 
 	pFrame.addButton("DpsControl", -30, 0, "ability_warrior_challange", MultiBot.L("tips.deathknight.dps.master"))
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.getFrame("DpsControl"))
 	end
 

@@ -108,7 +108,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 
     -- Parent "Misc" button
     local btnMisc = pFrame.addButton("Misc",  64,  0, "inv_misc_enggizmos_swissarmy", MultiBot.L("tips.every.misc"))
-    btnMisc.doLeft = function(self)
+    btnMisc.doRight = function(self)
        MultiBot.ShowHideSwitch(tMisc)
     end
 
@@ -225,7 +225,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 	if(pFrame.getName() == UnitName("player")) then return end
 
 	pFrame.addButton("Inventory", 244, 0, "inv_misc_bag_08", MultiBot.L("tips.every.inventory")).setDisable()
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		if(pButton.state) then
 			MultiBot.inventory:Hide()
 			pButton.setDisable()
@@ -249,14 +249,14 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 	end
 
 	pFrame.addButton("Outfits", 364, 0, "inv_chest_chain_15", MultiBot.L("tips.every.outfits", "Outfits")).setDisable()
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		if(MultiBot.OpenBotOutfits) then
 			MultiBot.OpenBotOutfits(pButton.getName(), pButton)
 		end
 	end
 
 	pFrame.addButton("Trainer", 394, 0, "spell_holy_magicalsentry", MultiBot.L("tips.every.trainer", "Trainer")).setDisable()
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		if(MultiBot.OpenBotTrainer) then
 			MultiBot.OpenBotTrainer(pButton.getName(), pButton)
 		end
@@ -272,7 +272,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 	combatFrame._mbDropdownManaged = true
 
 	pFrame.addButton("Combat", 454, 0, "Ability_Warrior_BattleShout", MultiBot.L("tips.every.combat"))
-	.doLeft = function()
+	.doRight = function()
 		MultiBot.ShowHideSwitch(combatFrame)
 	end
 
@@ -286,7 +286,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 	addBotCombatButton(combatFrame, "CombatWait10", 0, 0, "Spell_Holy_BorrowedTime", MultiBot.L("tips.every.combatwait10"), "wait for attack time 10")
 
 	pFrame.addButton("Spellbook", 274, 0, "inv_misc_book_09", MultiBot.L("tips.every.spellbook")).setDisable()
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		if(pButton.state) then
 			MultiBot.spellbook:Hide()
 			pButton.setDisable()
@@ -314,7 +314,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
 	end
 
 	pFrame.addButton("Talent", 304, 0, "ability_marksmanship", MultiBot.L("tips.every.talent")).setDisable()
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		if(pButton.state) then
 			pButton.setDisable()
 			MultiBot.talent:Hide()
@@ -343,7 +343,7 @@ MultiBot.addEvery = function(pFrame, pCombat, pNormal)
     -- Initial state: always disabled (quiet start, no bar shown on load)
     btn:setDisable()
 
-    btn.doLeft = function(self)
+    btn.doRight = function(self)
       -- if the dropdown exists and is visible, close it
       if MultiBot.spec.dropdown and MultiBot.spec.dropdown:IsShown() then
         MultiBot.spec:HideDropdown()

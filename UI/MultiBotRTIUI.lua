@@ -331,32 +331,56 @@ local function addDropdownReset(menuFrame, state, scope, target, defaultTexture,
     return button
 end
 
-local function addScopeDropdown(parentFrame, state, scope, target, buttonX, buttonY, defaultTexture, defaultAmount)
+-- Two layouts for the icon picker. The Units panel stacked the scope buttons horizontally, so its
+-- picker drops straight down; the left toolbar stacks them vertically, so the picker has to open
+-- sideways instead -- and to the *right*, towards the middle of the screen, because the toolbar
+-- already sits near the left edge on narrow resolutions.
+local function addScopeDropdown(parentFrame, state, scope, target, buttonX, buttonY, defaultTexture, defaultAmount, sideways)
     local key = scopeKey(scope, target)
+    local menuFrame
 
-    local menuFrame = parentFrame.addFrame(
-        "RTIDropdown" .. tostring(scope) .. tostring(target or ""),
-        buttonX,
-        buttonY - 274,
-        24,
-        30,
-        274
-    )
+    if sideways then
+        menuFrame = parentFrame.addFrame(
+            "RTIDropdown" .. tostring(scope) .. tostring(target or ""),
+            buttonX + 270,
+            buttonY,
+            24,
+            270,
+            30
+        )
+    else
+        menuFrame = parentFrame.addFrame(
+            "RTIDropdown" .. tostring(scope) .. tostring(target or ""),
+            buttonX,
+            buttonY - 274,
+            24,
+            30,
+            274
+        )
+    end
 
     menuFrame:Hide()
     menuFrame._mbDropdownManaged = true
     state.menus[key] = menuFrame
 
     for index, icon in ipairs(RTI_ATTACK_ICONS) do
-        addDropdownIcon(menuFrame, state, scope, target, icon, 0, (index - 1) * 30)
+        if sideways then
+            addDropdownIcon(menuFrame, state, scope, target, icon, -270 + index * 30, 0)
+        else
+            addDropdownIcon(menuFrame, state, scope, target, icon, 0, (index - 1) * 30)
+        end
     end
 
-    addDropdownReset(menuFrame, state, scope, target, defaultTexture, defaultAmount, 0, 240)
+    if sideways then
+        addDropdownReset(menuFrame, state, scope, target, defaultTexture, defaultAmount, 0, 0)
+    else
+        addDropdownReset(menuFrame, state, scope, target, defaultTexture, defaultAmount, 0, 240)
+    end
 
     return menuFrame
 end
 
-local function addScopeButton(parentFrame, state, scope, target, x, y, texture, tip, amount)
+local function addScopeButton(parentFrame, state, scope, target, x, y, texture, tip, amount, sideways)
     local key = scopeKey(scope, target)
 
     local button = parentFrame.addButton(
@@ -370,9 +394,9 @@ local function addScopeButton(parentFrame, state, scope, target, x, y, texture, 
     setButtonAmount(button, amount)
     state.scopeButtons[key] = button
 
-    local menu = addScopeDropdown(parentFrame, state, scope, target, x, y, texture, amount)
+    local menu = addScopeDropdown(parentFrame, state, scope, target, x, y, texture, amount, sideways)
 
-    button.doLeft = function()
+    button.doRight = function()
         toggleMenu(state, menu)
     end
 
@@ -528,11 +552,10 @@ function MultiBot.BuildBotRTIActionUI(tLeft, x, y)
         MultiBot.RunStoredBotRTISelections("pull rti target")
     end
 
-    button.doLeft = function(owner)
+    button.doRight = function(owner)
         MultiBot.ShowHideSwitch(owner.parent.frames["BotRTIAction"])
     end
 
-    button.doRight = button.doLeft
 
     MultiBot.RTIBotActionButton = button
     MultiBot.RTIBotActionFrame = frame
@@ -544,20 +567,29 @@ function MultiBot.BuildBotRTIActionUI(tLeft, x, y)
     }
 end
 
-function MultiBot.BuildRTIControlUI(controlFrame)
-    if not controlFrame or not controlFrame.addButton or not controlFrame.addFrame then
+-- Lives on the left toolbar now, not inside the Units ("PlayerBot Main Menu") panel: assigning an
+-- RTI icon and firing attack/pull is a mid-pull action, and having to open the roster window first
+-- made it two windows deep. The scope buttons are a vertical strip growing up off the bar (All,
+-- raid groups 1-8, then Attack and Pull), matching every other toolbar dropdown.
+function MultiBot.BuildRTIControlUI(tLeft, x, y)
+    if not tLeft or not tLeft.addButton or not tLeft.addFrame then
         return nil
     end
 
-    local mainButton = controlFrame.addButton(
+    local buttonX = x or MultiBot.GetLeftBarSlotX("RTI")
+    local buttonY = y or 0
+
+    local mainButton = tLeft.addButton(
         "RTI",
-        0,
-        150,
+        buttonX,
+        buttonY,
         "Spell_ChargePositive",
         MultiBot.L("tips.units.rti", "RTI / Pull control")
     )
 
-    local rtiFrame = controlFrame.addFrame("RTIControl", 0, 152, 24, 336, 64)
+    -- 11 rows of 24px. Deliberately NOT _mbDropdownManaged: picking a scope opens that scope's
+    -- icon menu, so the strip has to stay put instead of closing on the first click.
+    local rtiFrame = tLeft.addFrame("RTIControl", buttonX - 5, buttonY + 34, 24, 24, 264)
     rtiFrame:Hide()
     rtiFrame._mbSkipAutoCollapse = true
 
@@ -568,7 +600,7 @@ function MultiBot.BuildRTIControlUI(controlFrame)
         state,
         "ALL",
         "",
-        -30,
+        0,
         0,
         "achievement_bg_winsoa",
         localizedTip(
@@ -577,7 +609,8 @@ function MultiBot.BuildRTIControlUI(controlFrame)
             "tips.rti.all.body",
             "Click to choose an RTI icon for all bots."
         ),
-        "A"
+        "A",
+        true
     )
 
     for groupIndex = 1, 8 do
@@ -588,8 +621,8 @@ function MultiBot.BuildRTIControlUI(controlFrame)
             state,
             "GROUP",
             groupKey,
-            groupIndex * 30,
             0,
+            groupIndex * 24,
             "achievement_pvp_p_01",
             localizedTip(
                 "tips.rti.group.title",
@@ -598,14 +631,15 @@ function MultiBot.BuildRTIControlUI(controlFrame)
                 "Click to choose an RTI icon for raid group %s.",
                 groupKey
             ),
-            groupKey
+            groupKey,
+            true
         )
     end
 
     local attackButton = rtiFrame.addButton(
         "AttackSelectedRTITargets",
-        270,
         0,
+        216,
         "ability_warrior_offensivestance",
         localizedTip(
             "tips.rti.attack.target.title",
@@ -620,8 +654,8 @@ function MultiBot.BuildRTIControlUI(controlFrame)
 
     local pullButton = rtiFrame.addButton(
         "PullSelectedRTITargets",
-        300,
         0,
+        240,
         "ability_hunter_markedfordeath",
         localizedTip(
             "tips.rti.pull.target.title",
@@ -634,7 +668,7 @@ function MultiBot.BuildRTIControlUI(controlFrame)
         runSelectedScopes(state, "pull rti target")
     end
 
-    mainButton.doLeft = function()
+    mainButton.doRight = function()
         MultiBot.ShowHideSwitch(rtiFrame)
     end
 
@@ -714,7 +748,7 @@ function MultiBot.BuildBotRTIUI(parentFrame, botName, x, y)
         hideDropdownMenu(menuFrame, true)
     end
 
-    rootButton.doLeft = function()
+    rootButton.doRight = function()
         if MultiBot.ShowHideSwitch then
             MultiBot.ShowHideSwitch(menuFrame)
         elseif menuFrame:IsShown() then

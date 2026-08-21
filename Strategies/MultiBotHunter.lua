@@ -1,6 +1,6 @@
 MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	local nonCombatAspectButton = pFrame.addButton("NonCombatAspect", 0, 0, "spell_nature_protectionformnature", MultiBot.L("tips.hunter.naspect.master"))
-	nonCombatAspectButton.doLeft = function(pButton)
+	nonCombatAspectButton.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.parent.frames["NonCombatAspect"])
 	end
 
@@ -10,7 +10,7 @@ MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	nonCombatAspectFrame.addButton("NonCombatNature", 0, 0, "spell_nature_protectionformnature", MultiBot.L("tips.hunter.naspect.rnature"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "NonCombatAspect", pButton.texture, "nc +rnature,?", pButton.getName())
-		pButton.getButton("NonCombatAspect").doRight = function(btn)
+		pButton.getButton("NonCombatAspect").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "nc +rnature,?", "nc -rnature,?", btn.getName())
 		end
 	end
@@ -18,7 +18,7 @@ MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	nonCombatAspectFrame.addButton("NonCombatSpeed", 0, 26, "ability_mount_whitetiger", MultiBot.L("tips.hunter.naspect.bspeed"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "NonCombatAspect", pButton.texture, "nc +bspeed,?", pButton.getName())
-		pButton.getButton("NonCombatAspect").doRight = function(btn)
+		pButton.getButton("NonCombatAspect").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "nc +bspeed,?", "nc -bspeed,?", btn.getName())
 		end
 	end
@@ -26,7 +26,7 @@ MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	nonCombatAspectFrame.addButton("NonCombatMana", 0, 52, "ability_hunter_aspectoftheviper", MultiBot.L("tips.hunter.naspect.bmana"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "NonCombatAspect", pButton.texture, "nc +bmana,?", pButton.getName())
-		pButton.getButton("NonCombatAspect").doRight = function(btn)
+		pButton.getButton("NonCombatAspect").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "nc +bmana,?", "nc -bmana,?", btn.getName())
 		end
 	end
@@ -34,7 +34,7 @@ MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	nonCombatAspectFrame.addButton("NonCombatDps", 0, 78, "ability_hunter_pet_dragonhawk", MultiBot.L("tips.hunter.naspect.bdps"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "NonCombatAspect", pButton.texture, "nc +bdps,?", pButton.getName())
-		pButton.getButton("NonCombatAspect").doRight = function(btn)
+		pButton.getButton("NonCombatAspect").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "nc +bdps,?", "nc -bdps,?", btn.getName())
 		end
 	end
@@ -62,7 +62,7 @@ MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	-- COMABT-BUFF --
 
 	local combatAspectButton = pFrame.addButton("CombatAspect", -30, 0, "spell_nature_protectionformnature", MultiBot.L("tips.hunter.caspect.master"))
-	combatAspectButton.doLeft = function(pButton)
+	combatAspectButton.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.parent.frames["CombatAspect"])
 	end
 
@@ -72,7 +72,7 @@ MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	combatAspectFrame.addButton("CombatNature", 0, 0, "spell_nature_protectionformnature", MultiBot.L("tips.hunter.caspect.rnature"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "CombatAspect", pButton.texture, "co +rnature,?", pButton.getName())
-		pButton.getButton("CombatAspect").doRight = function(btn)
+		pButton.getButton("CombatAspect").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "co +rnature,?", "co -rnature,?", btn.getName())
 		end
 	end
@@ -80,7 +80,7 @@ MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	combatAspectFrame.addButton("CombatSpeed", 0, 26, "ability_mount_whitetiger", MultiBot.L("tips.hunter.caspect.bspeed"))
     .doLeft = function(pButton)
         MultiBot.SelectToTarget(pButton.get(), "CombatAspect", pButton.texture, "co +bspeed,?", pButton.getName())
-		pButton.getButton("NonCombatAspect").doRight = function(btn)
+		pButton.getButton("NonCombatAspect").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "co +bspeed,?", "co -bspeed,?", btn.getName())
 		end
 	end
@@ -88,7 +88,7 @@ MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	combatAspectFrame.addButton("CombatMana", 0, 52, "ability_hunter_aspectoftheviper", MultiBot.L("tips.hunter.caspect.bmana"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "CombatAspect", pButton.texture, "co +bmana,?", pButton.getName())
-		pButton.getButton("CombatAspect").doRight = function(btn)
+		pButton.getButton("CombatAspect").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "co +bmana,?", "co -bmana,?", btn.getName())
 		end
 	end
@@ -96,7 +96,7 @@ MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	combatAspectFrame.addButton("CombatDps", 0, 78, "ability_hunter_pet_dragonhawk", MultiBot.L("tips.hunter.caspect.bdps"))
 	.doLeft = function(pButton)
 		MultiBot.SelectToTarget(pButton.get(), "CombatAspect", pButton.texture, "co +bdps,?", pButton.getName())
-		pButton.getButton("CombatAspect").doRight = function(btn)
+		pButton.getButton("CombatAspect").doLeft = function(btn)
 			MultiBot.OnOffActionToTarget(btn, "co +bdps,?", "co -bdps,?", btn.getName())
 		end
 	end
@@ -124,7 +124,7 @@ MultiBot.addHunter = function(pFrame, pCombat, pNormal)
 	-- DPS --
 
 	pFrame.addButton("DpsControl", -60, 0, "ability_warrior_challange", MultiBot.L("tips.hunter.dps.master"))
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.getFrame("DpsControl"))
 	end
 

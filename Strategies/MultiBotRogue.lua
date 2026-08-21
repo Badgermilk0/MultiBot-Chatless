@@ -1,6 +1,6 @@
 MultiBot.addRogue = function(pFrame, pCombat, pNormal)
 	pFrame.addButton("DpsControl", 0, 0, "ability_warrior_challange", MultiBot.L("tips.rogue.dps.master"))
-	.doLeft = function(pButton)
+	.doRight = function(pButton)
 		MultiBot.ShowHideSwitch(pButton.getFrame("DpsControl"))
 	end
 
